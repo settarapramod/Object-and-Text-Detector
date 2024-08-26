@@ -1,85 +1,93 @@
+
 import xml.etree.ElementTree as ET
 
 def parse_dtsx(file_path):
-    tree = ET.parse(file_path)
-    root = tree.getroot()
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
 
-    namespace = {'': 'www.microsoft.com/SqlServer/Dts'}
+        # Namespace dictionary to handle XML namespaces in the .dtsx file
+        ns = {'dts': 'www.microsoft.com/SqlServer/Dts'}
 
-    # 1. Connection Managers
-    connection_managers = root.findall('.//ConnectionManagers/ConnectionManager', namespace)
-    connection_info = []
-    for cm in connection_managers:
-        conn_string = cm.attrib.get('ConnectionString', 'N/A')
-        server = "N/A"
-        if 'Data Source=' in conn_string:
-            server = conn_string.split('Data Source=')[1].split(';')[0]
-        connection_info.append({
-            'name': cm.attrib.get('Name'),
-            'connection_string': conn_string,
-            'server': server
-        })
+        # 1. How many connections managers are used? What is the connection string? What is the server it is trying to connect?
+        connection_managers = root.findall(".//dts:ConnectionManager", ns)
+        print(f"Total Connection Managers: {len(connection_managers)}")
+        for conn in connection_managers:
+            conn_name = conn.get('NAME')
+            connection_string = conn.find(".//dts:ConnectionString", ns).text if conn.find(".//dts:ConnectionString", ns) is not None else 'N/A'
+            server_name = connection_string.split(';')[0] if connection_string != 'N/A' else 'N/A'
+            print(f"Connection Manager: {conn_name}")
+            print(f"Connection String: {connection_string}")
+            print(f"Server Name: {server_name}")
+            print("")
 
-    # 2. Package Configurations
-    package_configs = root.findall('.//Configurations/Configuration', namespace)
-    package_config_info = [pc.attrib.get('ConfigurationString', 'N/A') for pc in package_configs]
+        # 2. How many package configurations are present and what are they?
+        package_configurations = root.findall(".//dts:Configuration", ns)
+        print(f"Total Package Configurations: {len(package_configurations)}")
+        for config in package_configurations:
+            config_name = config.get('NAME')
+            config_type = config.get('CONFIGURATIONTYPE')
+            print(f"Package Configuration: {config_name}, Type: {config_type}")
+            print("")
 
-    # 3. Data Flow Tasks (DFTs)
-    dfts = root.findall('.//Executable[@DTS:ExecutableType="SSIS.Pipeline.2"]', namespace)
-    dft_info = []
-    for dft in dfts:
-        dft_name = dft.attrib.get('DTS:Name', 'N/A')
-        # Find components (sources, transformations, destinations) within the DFT
-        components = dft.findall('.//Component', namespace)
-        for comp in components:
-            comp_name = comp.attrib.get('Name', 'N/A')
-            comp_type = comp.attrib.get('ComponentClassID', 'N/A')
-            if "source" in comp_type.lower():
-                src_name = comp_name
-            elif "destination" in comp_type.lower():
-                dst_name = comp_name
-            # Get column mappings (InputColumn & OutputColumn)
-            mappings = []
-            for mapping in comp.findall('.//InputColumn', namespace):
-                output_column = mapping.attrib.get('OutputColumnLineageID', 'N/A')
-                input_column = mapping.attrib.get('Name', 'N/A')
-                mappings.append({'input': input_column, 'output': output_column})
-            dft_info.append({
-                'dft_name': dft_name,
-                'from': src_name if 'src_name' in locals() else 'N/A',
-                'to': dst_name if 'dst_name' in locals() else 'N/A',
-                'mappings': mappings
-            })
+        # 3. How many DFTs are there and from where to where data is being moved. What are the column mappings done.
+        data_flows = root.findall(".//dts:Executable[@DTSTask=\"{0F7D89E4-35EF-4C65-AB22-FF7EA257D11A}\"]", ns)
+        print(f"Total Data Flow Tasks (DFTs): {len(data_flows)}")
+        for dft in data_flows:
+            dft_name = dft.get('NAME')
+            print(f"Data Flow Task: {dft_name}")
+            sources = dft.findall(".//dts:component[@componentClassID=\"{7A62D3E3-38FD-49B4-AFF3-FE1B361B81AC}\"]", ns)  # OLE DB Source
+            destinations = dft.findall(".//dts:component[@componentClassID=\"{5A5CBE2D-8A73-4991-92A0-44D876233989}\"]", ns)  # OLE DB Destination
+            for source in sources:
+                source_name = source.get('name')
+                print(f"Source Component: {source_name}")
+            for destination in destinations:
+                destination_name = destination.get('name')
+                print(f"Destination Component: {destination_name}")
+                mappings = destination.findall(".//dts:outputColumn/@name", ns)
+                for mapping in mappings:
+                    print(f"Column Mapping: {mapping.get('name')}")
+            print("")
 
-    # 4. SQL Execute Tasks
-    sql_tasks = root.findall('.//Executable[@DTS:ExecutableType="Microsoft.SqlServer.Dts.Tasks.ExecuteSQLTask.ExecuteSQLTask, Microsoft.SqlServer.SQLTask"]', namespace)
-    sql_task_info = [{'name': task.attrib.get('DTS:Name', 'N/A'), 'sql': task.find('.//SQLTask:SqlStatementSource', namespace).text if task.find('.//SQLTask:SqlStatementSource', namespace) is not None else 'N/A'} for task in sql_tasks]
+        # 4. How many SQL execute statements are being used and what are they
+        sql_tasks = root.findall(".//dts:Executable[@DTSTask=\"{E0C0F157-96A5-44ED-AB6C-DEC2C2909150}\"]", ns)
+        print(f"Total SQL Execute Tasks: {len(sql_tasks)}")
+        for sql_task in sql_tasks:
+            sql_name = sql_task.get('NAME')
+            sql_statement = sql_task.find(".//dts:SqlStatementSource", ns).text
+            print(f"SQL Task: {sql_name}")
+            print(f"SQL Statement: {sql_statement}")
+            print("")
 
-    return {
-        'connection_managers': connection_info,
-        'package_configurations': package_config_info,
-        'data_flow_tasks': dft_info,
-        'sql_execute_tasks': sql_task_info
-    }
+    except ET.ParseError as e:
+        print(f"Error parsing the DTSX file: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
-    file_path = 'path/to/your/package.dtsx'
-    result = parse_dtsx(file_path)
-    
-    print("Connection Managers:")
-    for cm in result['connection_managers']:
-        print(f"Name: {cm['name']}, Connection String: {cm['connection_string']}, Server: {cm['server']}")
+    # Replace 'your_file.dtsx' with the path to your .dtsx file
+    file_path = 'your_file.dtsx'
+    parse_dtsx(file_path)
+```
 
-    print("\nPackage Configurations:")
-    for pc in result['package_configurations']:
-        print(f"Configuration: {pc}")
+### Explanation:
 
-    print("\nData Flow Tasks (DFTs):")
-    for dft in result['data_flow_tasks']:
-        print(f"DFT Name: {dft['dft_name']}, From: {dft['from']}, To: {dft['to']}")
-        for mapping in dft['mappings']:
-            print(f"    Mapping: Input: {mapping['input']} -> Output: {mapping['output']}")
+1. **Connection Managers:**
+   - The script locates all connection managers and retrieves the connection string and server name.
 
-    print("\nSQL Execute Tasks:")
-    for task in result['sql_execute_tasks']:
-        print(f"Task Name: {task['name']}, SQL: {task['sql']}")
+2. **Package Configurations:**
+   - It counts and lists all package configurations.
+
+3. **Data Flow Tasks (DFTs):**
+   - It counts the number of DFTs, identifies the source and destination components within the DFT, and lists column mappings.
+
+4. **SQL Execute Statements:**
+   - It identifies SQL execute tasks and extracts the SQL statements.
+
+### Error Handling:
+- The script handles XML parsing errors and general exceptions to ensure that issues like missing elements or incorrect formats do not cause the script to fail unexpectedly.
+
+### Running the Script:
+- Replace `'your_file.dtsx'` with the actual path to your `.dtsx` file when running the script.
+
+Let me know if you need any further assistance or modifications!
