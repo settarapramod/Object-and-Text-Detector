@@ -1,12 +1,6 @@
-Here’s a Python script to achieve this using the `pyodbc` library to connect to SQL Server and `threading` for parallel execution of tasks. The script fetches data from the `process`, `subprocess`, and `tasks` tables, then runs tasks in parallel if the sequences match and sequentially if not.
+To handle the scenario where subprocesses with the same sequence can run in parallel, we need to extend the threading logic to operate at both the subprocess and task levels. Here's an updated version of the script that allows subprocesses with the same sequence to run concurrently.
 
-### Prerequisites:
-1. Install `pyodbc` and `threading` libraries if you haven't already:
-   ```bash
-   pip install pyodbc
-   ```
-
-### Python Script:
+### Updated Python Script:
 
 ```python
 import pyodbc
@@ -45,14 +39,11 @@ def fetch_data(conn):
     cursor.execute(query)
     return cursor.fetchall()
 
-# Function to process subprocesses
+# Function to process a single subprocess (its tasks)
 def process_subprocess(subprocess_tasks):
-    threads = []
-    
-    # Grouping tasks by their sequence to run them in parallel or sequentially
     current_sequence = subprocess_tasks[0]['task_sequence']
     parallel_tasks = []
-    
+
     for task in subprocess_tasks:
         if task['task_sequence'] == current_sequence:
             parallel_tasks.append(task)
@@ -77,36 +68,53 @@ def run_parallel_tasks(tasks):
     for t in threads:
         t.join()  # Ensure all tasks in the same sequence are completed
 
-# Main function to process everything
+# Function to process subprocesses in parallel by sequence
+def process_subprocesses_in_parallel(subprocesses):
+    threads = []
+    
+    for subprocess in subprocesses:
+        t = threading.Thread(target=process_subprocess, args=(subprocess,))
+        threads.append(t)
+        t.start()
+    
+    for t in threads:
+        t.join()  # Wait for all subprocesses with the same sequence to finish
+
+# Main function to process all tasks and subprocesses
 def process_all_tasks(conn):
     data = fetch_data(conn)
     
     current_process = None
-    current_subprocess = None
+    current_subprocess_sequence = None
+    subprocesses_by_sequence = []
     subprocess_tasks = []
 
     for row in data:
         process_id = row.process_id
         subprocess_id = row.subprocess_id
+        subprocess_sequence = row.subprocess_sequence
         
         task_info = {
             'task_id': row.task_id,
             'task_sequence': row.task_sequence
         }
         
-        if subprocess_id != current_subprocess:
+        if subprocess_sequence != current_subprocess_sequence:
             if subprocess_tasks:
-                # Process the previous subprocess
-                process_subprocess(subprocess_tasks)
-            
+                # Group all subprocesses with the same sequence and process them in parallel
+                subprocesses_by_sequence.append(subprocess_tasks)
             subprocess_tasks = [task_info]
-            current_subprocess = subprocess_id
+            current_subprocess_sequence = subprocess_sequence
         else:
             subprocess_tasks.append(task_info)
     
-    # Process any remaining subprocess
+    # Process remaining subprocesses
     if subprocess_tasks:
-        process_subprocess(subprocess_tasks)
+        subprocesses_by_sequence.append(subprocess_tasks)
+    
+    # Now process subprocesses by sequence
+    for subprocess_group in subprocesses_by_sequence:
+        process_subprocesses_in_parallel(subprocess_group)
 
 if __name__ == "__main__":
     # DB connection parameters
@@ -120,25 +128,21 @@ if __name__ == "__main__":
     conn.close()
 ```
 
-### Explanation:
-1. **Database Connection**: The `connect_to_db` function establishes a connection to the SQL Server using `pyodbc`.
-   
-2. **Fetching Data**: The `fetch_data` function retrieves data from the `process`, `subprocess`, and `tasks` tables in SQL Server.
+### Key Changes:
+1. **Handling Subprocesses in Parallel**: 
+   - I added the function `process_subprocesses_in_parallel` to run subprocesses in parallel when they have the same sequence.
+   - Subprocesses are grouped by their `subprocess_sequence`, and all subprocesses in the same sequence are started concurrently.
 
-3. **Processing Subprocess**: The `process_subprocess` function takes
+2. **Processing Tasks Within Subprocesses**:
+   - Tasks within each subprocess are processed in parallel if they share the same `task_sequence`, similar to before.
 
-a list of tasks under a subprocess and groups them based on their sequence. If multiple tasks share the same sequence, they are run in parallel using threads. Otherwise, tasks are executed sequentially.
+3. **Flow of Execution**:
+   - Subprocesses are grouped by their sequence.
+   - When the sequence changes, all subprocesses with the same sequence are run in parallel using threads.
+   - Within each subprocess, tasks are run either sequentially or in parallel based on the `task_sequence`.
 
-4. **Running Tasks in Parallel**: The `run_parallel_tasks` function starts a new thread for each task with the same sequence and waits for all threads to finish before moving to the next sequence.
+### Example Flow:
+- If two subprocesses have the same `subprocess_sequence`, they will be executed in parallel.
+- Within each subprocess, tasks with the same `task_sequence` will also run in parallel.
 
-5. **Main Workflow**: The `process_all_tasks` function iterates over the fetched data. It keeps track of the current subprocess and its tasks, processing them as a batch when the subprocess changes or when the loop ends.
-
-### Assumptions:
-- Tasks with the same sequence within a subprocess run in parallel, while tasks with different sequences are processed sequentially.
-- `process_task` is a placeholder function where you can implement the actual logic for processing a task.
-
-### Customization:
-- You may need to adjust the connection parameters and logic inside the `process_task` function to match your specific use case.
-- For debugging or logging, you can add more `print` statements or use Python’s `logging` library.
-
-Let me know if you need any further adjustments or clarifications!
+This design ensures that both subprocesses and tasks can run concurrently where applicable. Let me know if this is the behavior you were aiming for or if there are any other tweaks you'd like to add!
