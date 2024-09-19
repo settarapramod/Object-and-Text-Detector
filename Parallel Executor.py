@@ -1,8 +1,3 @@
-To handle the scenario where subprocesses with the same sequence can run in parallel, we need to extend the threading logic to operate at both the subprocess and task levels. Here's an updated version of the script that allows subprocesses with the same sequence to run concurrently.
-
-### Updated Python Script:
-
-```python
 import pyodbc
 import threading
 
@@ -17,104 +12,76 @@ def connect_to_db(server, database, username, password):
     )
     return conn
 
-# Function to process tasks
+# Function to process a task
 def process_task(task_id):
     print(f"Processing Task ID: {task_id}")
-    # You can add your actual task processing logic here
+    # Add task processing logic here
 
-# Function to fetch data from the tables
+# Function to fetch data from the database
 def fetch_data(conn):
     cursor = conn.cursor()
-    
-    # Query to fetch process, subprocess and task data
     query = """
     SELECT p.process_id, p.process_name, sp.subprocess_id, sp.sequence as subprocess_sequence, 
            t.task_id, t.sequence as task_sequence
     FROM process p
     JOIN subprocess sp ON p.process_id = sp.process_id
     JOIN tasks t ON sp.subprocess_id = t.subprocess_id
-    ORDER BY p.process_id, sp.sequence, t.sequence
+    ORDER BY sp.sequence, t.sequence
     """
-    
     cursor.execute(query)
     return cursor.fetchall()
 
-# Function to process a single subprocess (its tasks)
-def process_subprocess(subprocess_tasks):
-    current_sequence = subprocess_tasks[0]['task_sequence']
-    parallel_tasks = []
-
-    for task in subprocess_tasks:
-        if task['task_sequence'] == current_sequence:
-            parallel_tasks.append(task)
-        else:
-            # Run the previous parallel tasks in threads
-            run_parallel_tasks(parallel_tasks)
-            current_sequence = task['task_sequence']
-            parallel_tasks = [task]
-
-    # Run any remaining parallel tasks
-    if parallel_tasks:
-        run_parallel_tasks(parallel_tasks)
-
-# Function to run tasks in parallel
-def run_parallel_tasks(tasks):
+# Function to handle task execution for a single subprocess
+def handle_subprocess_tasks(subprocess_id, tasks):
+    print(f"Starting subprocess {subprocess_id}")
     threads = []
+
+    # Run tasks in parallel if they have the same sequence
     for task in tasks:
-        t = threading.Thread(target=process_task, args=(task['task_id'],))
-        threads.append(t)
-        t.start()
-    
-    for t in threads:
-        t.join()  # Ensure all tasks in the same sequence are completed
+        thread = threading.Thread(target=process_task, args=(task['task_id'],))
+        threads.append(thread)
+        thread.start()
 
-# Function to process subprocesses in parallel by sequence
-def process_subprocesses_in_parallel(subprocesses):
+    # Wait for all threads (tasks) to complete
+    for thread in threads:
+        thread.join()
+
+# Function to process subprocesses in parallel
+def process_subprocesses(subprocesses):
     threads = []
-    
-    for subprocess in subprocesses:
-        t = threading.Thread(target=process_subprocess, args=(subprocess,))
-        threads.append(t)
-        t.start()
-    
-    for t in threads:
-        t.join()  # Wait for all subprocesses with the same sequence to finish
 
-# Main function to process all tasks and subprocesses
+    # Run each subprocess in parallel if it has the same sequence
+    for subprocess_id, tasks in subprocesses.items():
+        thread = threading.Thread(target=handle_subprocess_tasks, args=(subprocess_id, tasks))
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all subprocess threads to complete
+    for thread in threads:
+        thread.join()
+
+# Main function to fetch data and run processes and subprocesses
 def process_all_tasks(conn):
     data = fetch_data(conn)
     
-    current_process = None
-    current_subprocess_sequence = None
-    subprocesses_by_sequence = []
-    subprocess_tasks = []
-
+    # Group subprocesses by their sequence
+    subprocesses = {}
+    
     for row in data:
-        process_id = row.process_id
         subprocess_id = row.subprocess_id
         subprocess_sequence = row.subprocess_sequence
-        
         task_info = {
             'task_id': row.task_id,
             'task_sequence': row.task_sequence
         }
         
-        if subprocess_sequence != current_subprocess_sequence:
-            if subprocess_tasks:
-                # Group all subprocesses with the same sequence and process them in parallel
-                subprocesses_by_sequence.append(subprocess_tasks)
-            subprocess_tasks = [task_info]
-            current_subprocess_sequence = subprocess_sequence
-        else:
-            subprocess_tasks.append(task_info)
-    
-    # Process remaining subprocesses
-    if subprocess_tasks:
-        subprocesses_by_sequence.append(subprocess_tasks)
-    
-    # Now process subprocesses by sequence
-    for subprocess_group in subprocesses_by_sequence:
-        process_subprocesses_in_parallel(subprocess_group)
+        if subprocess_id not in subprocesses:
+            subprocesses[subprocess_id] = []
+        
+        subprocesses[subprocess_id].append(task_info)
+
+    # Run all subprocesses
+    process_subprocesses(subprocesses)
 
 if __name__ == "__main__":
     # DB connection parameters
@@ -123,26 +90,11 @@ if __name__ == "__main__":
     username = 'your_username'
     password = 'your_password'
     
+    # Establish connection
     conn = connect_to_db(server, database, username, password)
+
+    # Process tasks
     process_all_tasks(conn)
+
+    # Close connection
     conn.close()
-```
-
-### Key Changes:
-1. **Handling Subprocesses in Parallel**: 
-   - I added the function `process_subprocesses_in_parallel` to run subprocesses in parallel when they have the same sequence.
-   - Subprocesses are grouped by their `subprocess_sequence`, and all subprocesses in the same sequence are started concurrently.
-
-2. **Processing Tasks Within Subprocesses**:
-   - Tasks within each subprocess are processed in parallel if they share the same `task_sequence`, similar to before.
-
-3. **Flow of Execution**:
-   - Subprocesses are grouped by their sequence.
-   - When the sequence changes, all subprocesses with the same sequence are run in parallel using threads.
-   - Within each subprocess, tasks are run either sequentially or in parallel based on the `task_sequence`.
-
-### Example Flow:
-- If two subprocesses have the same `subprocess_sequence`, they will be executed in parallel.
-- Within each subprocess, tasks with the same `task_sequence` will also run in parallel.
-
-This design ensures that both subprocesses and tasks can run concurrently where applicable. Let me know if this is the behavior you were aiming for or if there are any other tweaks you'd like to add!
