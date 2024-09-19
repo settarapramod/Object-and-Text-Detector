@@ -98,12 +98,14 @@ def run_pipeline(process_id):
 
     # Apache Beam pipeline
     with beam.Pipeline(options=pipeline_options) as p:
-        # Create a PCollection of subprocesses
+        # Create a PCollection of (sequence, subprocess) tuples
         subprocesses_pcollection = (
             p
             | 'Create subprocesses' >> beam.Create(subprocesses)
+            # Convert each subprocess to a (sequence, subprocess) tuple
+            | 'Map subprocess to sequence tuple' >> beam.Map(lambda sp: (sp.sequence, sp))
             # Group subprocesses by sequence
-            | 'Group subprocesses by sequence' >> beam.GroupByKey(lambda sp: sp.sequence)
+            | 'Group subprocesses by sequence' >> beam.GroupByKey()
         )
 
         # Process each subprocess group in parallel
@@ -118,4 +120,3 @@ if __name__ == "__main__":
 
     # Run the pipeline
     run_pipeline(process_id)
-            
