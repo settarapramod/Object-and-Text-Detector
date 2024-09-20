@@ -120,23 +120,24 @@ class ProcessSubprocessGroupFn(beam.DoFn):
             print(f"Starting Subprocess ID: {subprocess.subprocess_id} with Sequence: {subprocess.sequence}")
             time.sleep(1)  # Simulating subprocess start delay
 
-            # Process tasks in parallel for each sequence group
+            # Process tasks in parallel for each sequence group using ParDo
             for task_sequence, tasks in sorted(tasks_by_sequence.items()):
                 print(f"Processing Tasks for Subprocess {subprocess.subprocess_id} with Task Sequence: {task_sequence}")
                 
                 # Process tasks in parallel within the same sequence
-                results.extend(self.process_task_group(tasks))
+                results.extend(self.process_task_group_in_parallel(tasks))
 
             time.sleep(1)  # Simulating subprocess end delay
             print(f"Completed Subprocess ID: {subprocess.subprocess_id} with Sequence: {subprocess.sequence}")
 
         return results
 
-    def process_task_group(self, task_group):
-        # This processes all tasks in the same sequence in parallel
-        for task in task_group:
-            task.process()  # Simulating task processing
-        return task_group
+    def process_task_group_in_parallel(self, task_group):
+        # Emit each task for parallel processing using Beam's ParDo
+        return [
+            beam.pvalue.TaggedOutput(task.task_id, task.process())  # Processing tasks in parallel
+            for task in task_group
+        ]
 
 if __name__ == "__main__":
     # Process ID to filter subprocesses
