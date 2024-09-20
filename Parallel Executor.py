@@ -1,6 +1,7 @@
 import pyodbc
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
+import time
 
 # Database connection
 def connect_to_db(server, database, username, password):
@@ -35,7 +36,9 @@ class Task:
         self.sequence = sequence
 
     def process(self):
-        print(f"Processing Task ID: {self.task_id} from Subprocess {self.subprocess_id}")
+        print(f"Starting Task ID: {self.task_id} from Subprocess {self.subprocess_id}")
+        time.sleep(2)  # Simulating task processing delay
+        print(f"Completed Task ID: {self.task_id} from Subprocess {self.subprocess_id}")
 
 # Fetch subprocesses by process_id
 def fetch_subprocesses(conn, process_id):
@@ -101,8 +104,10 @@ def run_pipeline(process_id):
 # Beam DoFn class to process subprocesses and tasks
 class ProcessSubprocessGroupFn(beam.DoFn):
     def process(self, element):
-        _, subprocess_group = element
+        sequence, subprocess_group = element
         results = []
+        print(f"\nProcessing Subprocesses with Sequence: {sequence}")
+
         for subprocess in subprocess_group:
             tasks_by_sequence = {}
 
@@ -112,12 +117,19 @@ class ProcessSubprocessGroupFn(beam.DoFn):
                     tasks_by_sequence[task.sequence] = []
                 tasks_by_sequence[task.sequence].append(task)
 
+            print(f"Starting Subprocess ID: {subprocess.subprocess_id} with Sequence: {subprocess.sequence}")
+            time.sleep(1)  # Simulating subprocess start delay
+
             # Process tasks in parallel for each sequence group
-            for sequence, tasks in sorted(tasks_by_sequence.items()):
-                print(f"Processing Subprocess ID: {subprocess.subprocess_id} with sequence: {subprocess.sequence}")
+            for task_sequence, tasks in sorted(tasks_by_sequence.items()):
+                print(f"Processing Tasks for Subprocess {subprocess.subprocess_id} with Task Sequence: {task_sequence}")
                 
                 # Process tasks in parallel within the same sequence
                 results.extend(self.process_task_group(tasks))
+
+            time.sleep(1)  # Simulating subprocess end delay
+            print(f"Completed Subprocess ID: {subprocess.subprocess_id} with Sequence: {subprocess.sequence}")
+
         return results
 
     def process_task_group(self, task_group):
