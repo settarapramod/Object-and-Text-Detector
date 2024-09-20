@@ -63,23 +63,7 @@ def fetch_tasks(conn, subprocess_id):
     
     return [Task(row.task_id, row.subprocess_id, row.sequence) for row in result]
 
-# Process a subprocess
-def process_subprocess(subprocess):
-    print(f"Processing Subprocess ID: {subprocess.subprocess_id} with sequence: {subprocess.sequence}")
-
-    # Group tasks by sequence and process them in parallel
-    tasks_by_sequence = {}
-    for task in subprocess.tasks:
-        if task.sequence not in tasks_by_sequence:
-            tasks_by_sequence[task.sequence] = []
-        tasks_by_sequence[task.sequence].append(task)
-
-    for sequence, tasks in sorted(tasks_by_sequence.items()):
-        print(f"Processing task group with sequence: {sequence}")
-        for task in tasks:
-            task.process()
-
-# Beam pipeline for parallel processing of subprocesses
+# Beam pipeline for parallel processing of subprocesses and tasks
 def run_pipeline(process_id):
     pipeline_options = PipelineOptions()
 
@@ -108,11 +92,31 @@ def run_pipeline(process_id):
             | 'Group subprocesses by sequence' >> beam.GroupByKey()
         )
 
-        # Process each subprocess group in parallel
+        # Process each subprocess group based on sequence
         (
             subprocesses_pcollection
-            | 'Process Subprocesses' >> beam.Map(lambda group: process_subprocess(group[1]))
+            | 'Process Subprocesses and Tasks' >> beam.FlatMap(lambda group: process_subprocess_group(group[1]))
         )
+
+# Process subprocess group (parallel subprocesses)
+def process_subprocess_group(subprocess_group):
+    results = []
+    # For each subprocess in the group, process the tasks
+    for subprocess in subprocess_group:
+        tasks_by_sequence = {}
+
+        # Group tasks by sequence within the subprocess
+        for task in subprocess.tasks:
+            if task.sequence not in tasks_by_sequence:
+                tasks_by_sequence[task.sequence] = []
+            tasks_by_sequence[task.sequence].append(task)
+
+        # Process tasks in parallel by their sequence
+        for sequence, tasks in sorted(tasks_by_sequence.items()):
+            results.append(f"Processing Subprocess ID: {subprocess.subprocess_id} with sequence: {subprocess.sequence}")
+            for task in tasks:
+                task.process()
+    return results
 
 if __name__ == "__main__":
     # Process ID to filter subprocesses
