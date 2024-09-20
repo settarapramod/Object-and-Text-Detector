@@ -63,24 +63,7 @@ def fetch_tasks(conn, subprocess_id):
     
     return [Task(row.task_id, row.subprocess_id, row.sequence) for row in result]
 
-# Process tasks in parallel by sequence
-def process_tasks_by_sequence(tasks):
-    tasks_by_sequence = {}
-
-    # Group tasks by their sequence
-    for task in tasks:
-        if task.sequence not in tasks_by_sequence:
-            tasks_by_sequence[task.sequence] = []
-        tasks_by_sequence[task.sequence].append(task)
-
-    # Process task groups by sequence
-    for sequence, task_group in sorted(tasks_by_sequence.items()):
-        print(f"Processing tasks with sequence {sequence} in parallel")
-        # Process tasks with the same sequence in parallel
-        for task in task_group:
-            task.process()
-
-# Apache Beam pipeline for parallel processing of subprocesses and tasks
+# Beam pipeline for parallel processing of subprocesses and tasks
 def run_pipeline(process_id):
     pipeline_options = PipelineOptions()
 
@@ -105,24 +88,43 @@ def run_pipeline(process_id):
             | 'Create subprocesses' >> beam.Create(subprocesses)
             # Convert each subprocess to a (sequence, subprocess) tuple
             | 'Map subprocess to sequence tuple' >> beam.Map(lambda sp: (sp.sequence, sp))
-            # Group subprocesses by sequence (to run them in parallel if they have the same sequence)
+            # Group subprocesses by sequence
             | 'Group subprocesses by sequence' >> beam.GroupByKey()
         )
 
-        # Process each subprocess group in parallel based on sequence
+        # Process each subprocess group in parallel
         (
             subprocesses_pcollection
-            | 'Process Subprocesses' >> beam.FlatMap(lambda group: process_subprocess_group(group[1]))
+            | 'Process Subprocesses and Tasks' >> beam.ParDo(ProcessSubprocessGroupFn())
         )
 
-# Process a group of subprocesses that have the same sequence
-def process_subprocess_group(subprocess_group):
-    results = []
-    # For each subprocess in the group, process the tasks
-    for subprocess in subprocess_group:
-        print(f"Processing Subprocess ID: {subprocess.subprocess_id} with sequence: {subprocess.sequence}")
-        process_tasks_by_sequence(subprocess.tasks)  # Process tasks within this subprocess
-    return results
+# Beam DoFn class to process subprocesses and tasks
+class ProcessSubprocessGroupFn(beam.DoFn):
+    def process(self, element):
+        _, subprocess_group = element
+        results = []
+        for subprocess in subprocess_group:
+            tasks_by_sequence = {}
+
+            # Group tasks by sequence within the subprocess
+            for task in subprocess.tasks:
+                if task.sequence not in tasks_by_sequence:
+                    tasks_by_sequence[task.sequence] = []
+                tasks_by_sequence[task.sequence].append(task)
+
+            # Process tasks in parallel for each sequence group
+            for sequence, tasks in sorted(tasks_by_sequence.items()):
+                print(f"Processing Subprocess ID: {subprocess.subprocess_id} with sequence: {subprocess.sequence}")
+                
+                # Process tasks in parallel within the same sequence
+                results.extend(self.process_task_group(tasks))
+        return results
+
+    def process_task_group(self, task_group):
+        # This processes all tasks in the same sequence in parallel
+        for task in task_group:
+            task.process()  # Simulating task processing
+        return task_group
 
 if __name__ == "__main__":
     # Process ID to filter subprocesses
