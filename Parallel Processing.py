@@ -1,7 +1,6 @@
 import apache_beam as beam
 import time
 from apache_beam.options.pipeline_options import PipelineOptions
-from apache_beam.transforms.util import Reshuffle
 
 # Define a simple Task class with a sequence attribute
 class Task:
@@ -17,17 +16,9 @@ def process_task(task):
     print(f"Completed Task: {task.name}, Task ID: {task.task_id}, Sequence: {task.sequence}")
     return task
 
-# Function to process tasks in parallel within each sequence group
-def process_sequence_group(task_group):
-    sequence, tasks = task_group
-    print(f"Processing sequence {sequence} with {len(tasks)} tasks in parallel")
-    # Process tasks in parallel using a beam.Map
-    with beam.Pipeline(options=pipeline_options) as p:
-        (
-            p
-            | 'Create Task List for Parallel Processing' >> beam.Create(tasks)
-            | 'Process Parallel Tasks' >> beam.Map(process_task)
-        )
+# Partition function to split tasks by sequence
+def partition_by_sequence(task, num_partitions):
+    return task.sequence - 1  # Partition by sequence (assuming sequences are 1-based)
 
 # Create a list of Task objects with different sequences
 tasks = [
@@ -38,17 +29,23 @@ tasks = [
     Task(task_id=4, name="Task 4", sequence=3)
 ]
 
-# Set up Apache Beam pipeline options to enable parallelism
+# Set up Apache Beam pipeline options to enable multi-threading or multi-processing
 pipeline_options = PipelineOptions([
     '--direct_num_workers=5',  # Set the number of parallel workers
+    '--direct_running_mode=multi_threading'  # Enable multi-threading in DirectRunner
 ])
 
 # Define the Apache Beam pipeline
 with beam.Pipeline(options=pipeline_options) as p:
-    (
-        p
-        | 'Create Task List' >> beam.Create(tasks)  # Create PCollection of Task objects
-        | 'Group by Sequence' >> beam.GroupBy(lambda task: task.sequence)  # Group by sequence
-        | 'Reshuffle to Force Sequential Processing' >> beam.Reshuffle()  # Enforce sequence group ordering
-        | 'Process Task Groups Sequentially' >> beam.Map(process_sequence_group)  # Process each sequence group
-    )
+    # Create the PCollection of tasks
+    task_pcollection = p | 'Create Task List' >> beam.Create(tasks)
+    
+    # Partition the tasks by sequence number
+    partitions = task_pcollection | 'Partition by Sequence' >> beam.Partition(partition_by_sequence, 3)
+    
+    # Process each partition (sequence) in order, but tasks within the same sequence in parallel
+    for i in range(3):  # Assuming we know the number of sequences
+        (
+            partitions[i]  # Get the partition corresponding to the sequence number
+            | f'Process Sequence {i+1}' >> beam.Map(process_task)
+        )
