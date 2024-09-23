@@ -10,7 +10,7 @@ class Task:
 
 # Simulate a process function with sleep
 def process_task(task):
-    print(f"Processing Task: {task.name}, Task ID: {task.task_id}")
+    print(f"Started Task: {task.name}, Task ID: {task.task_id}")
     time.sleep(2)  # Simulate work with sleep
     print(f"Completed Task: {task.name}, Task ID: {task.task_id}")
     return task
@@ -18,8 +18,10 @@ def process_task(task):
 # Create a list of Task objects
 tasks = [Task(task_id=i, name=f"Task {i}") for i in range(5)]
 
-# Set up Apache Beam pipeline options
-pipeline_options = PipelineOptions()
+# Set up Apache Beam pipeline options to enable parallelism
+pipeline_options = PipelineOptions([
+    '--direct_num_workers=5',  # Set the number of parallel workers to 5
+])
 
 # Define the Apache Beam pipeline
 with beam.Pipeline(options=pipeline_options) as p:
