@@ -23,11 +23,12 @@ def process_task(task):
 def process_sequence_group(task_group):
     sequence, tasks = task_group
     print(f"\nProcessing sequence {sequence} with tasks: {tasks}\n")
-    # Process tasks in parallel
+    
+    # Create a parallel pipeline for each group (to simulate parallelism)
     with beam.Pipeline() as p:
         (
             p
-            | 'Create Tasks for Parallel Processing' >> beam.Create(tasks)
+            | 'Create Parallel Task Group' >> beam.Create(tasks)
             | 'Process Tasks in Parallel' >> beam.Map(process_task)
         )
 
@@ -50,7 +51,7 @@ with beam.Pipeline(options=pipeline_options) as p:
     (
         p
         | 'Create Task List' >> beam.Create(tasks)  # Create PCollection of Task objects
-        | 'Key By Sequence' >> beam.Map(lambda task: (task.sequence, task))  # Key by sequence
+        | 'Key by Sequence' >> beam.Map(lambda task: (task.sequence, task))  # Key by sequence
         | 'Group by Sequence' >> beam.GroupByKey()  # Group by sequence
-        | 'Process Each Sequence Group Sequentially' >> beam.Map(process_sequence_group)  # Process sequence groups one by one
+        | 'Process Each Sequence Sequentially' >> beam.ParDo(lambda task_group: process_sequence_group(task_group))  # Process sequence groups one by one
     )
