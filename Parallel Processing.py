@@ -1,6 +1,7 @@
 import apache_beam as beam
 import time
 from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.transforms.util import Reshuffle
 
 # Define a simple Task class with a sequence attribute
 class Task:
@@ -16,14 +17,17 @@ def process_task(task):
     print(f"Completed Task: {task.name}, Task ID: {task.task_id}, Sequence: {task.sequence}")
     return task
 
-# Group tasks by sequence, ensuring parallelism for tasks within the same sequence
+# Function to process tasks in parallel within each sequence group
 def process_sequence_group(task_group):
     sequence, tasks = task_group
-    print(f"Processing sequence {sequence} with {len(tasks)} tasks")
-    # Process tasks in parallel
-    for task in tasks:
-        process_task(task)
-    return tasks
+    print(f"Processing sequence {sequence} with {len(tasks)} tasks in parallel")
+    # Process tasks in parallel using a beam.Map
+    with beam.Pipeline(options=pipeline_options) as p:
+        (
+            p
+            | 'Create Task List for Parallel Processing' >> beam.Create(tasks)
+            | 'Process Parallel Tasks' >> beam.Map(process_task)
+        )
 
 # Create a list of Task objects with different sequences
 tasks = [
@@ -45,5 +49,6 @@ with beam.Pipeline(options=pipeline_options) as p:
         p
         | 'Create Task List' >> beam.Create(tasks)  # Create PCollection of Task objects
         | 'Group by Sequence' >> beam.GroupBy(lambda task: task.sequence)  # Group by sequence
-        | 'Process Task Groups' >> beam.Map(process_sequence_group)  # Process each sequence group
+        | 'Reshuffle to Force Sequential Processing' >> beam.Reshuffle()  # Enforce sequence group ordering
+        | 'Process Task Groups Sequentially' >> beam.Map(process_sequence_group)  # Process each sequence group
     )
