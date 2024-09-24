@@ -24,10 +24,10 @@ def process_task(task):
     time.sleep(2)  # Simulate task processing time
     print(f"Task {task.task_id} from Subprocess {task.subprocess_id} completed.")
 
-# Simulate subprocess processing
-def process_subprocess(subprocess, max_processes):
+# Simulate subprocess processing without using a Pool for tasks
+def process_subprocess(subprocess):
     print(f"Processing Subprocess {subprocess.subprocess_id} (Sequence {subprocess.sequence})")
-    
+
     # Group tasks by their sequence for parallel processing
     tasks_by_sequence = defaultdict(list)
     for task in subprocess.tasks:
@@ -35,9 +35,16 @@ def process_subprocess(subprocess, max_processes):
     
     # Process tasks in sequence order
     for sequence in sorted(tasks_by_sequence):
-        # Create a pool to parallel process tasks with the same sequence
-        with multiprocessing.Pool(processes=max_processes) as pool:
-            pool.map(process_task, tasks_by_sequence[sequence])
+        processes = []
+        # Parallel process tasks with the same sequence using multiprocessing.Process
+        for task in tasks_by_sequence[sequence]:
+            p = multiprocessing.Process(target=process_task, args=(task,))
+            processes.append(p)
+            p.start()
+
+        # Wait for all tasks with the same sequence to complete
+        for p in processes:
+            p.join()
     
     print(f"Subprocess {subprocess.subprocess_id} completed.")
 
@@ -50,9 +57,16 @@ def process_subprocesses(subprocesses, max_processes):
     
     # Process subprocesses in sequence order
     for sequence in sorted(subprocess_by_sequence):
-        # Create a pool to parallel process subprocesses with the same sequence
-        with multiprocessing.Pool(processes=max_processes) as pool:
-            pool.starmap(process_subprocess, [(subprocess, max_processes) for subprocess in subprocess_by_sequence[sequence]])
+        processes = []
+        # Limit the number of subprocesses that can run in parallel using multiprocessing.Process
+        for subprocess in subprocess_by_sequence[sequence]:
+            p = multiprocessing.Process(target=process_subprocess, args=(subprocess,))
+            processes.append(p)
+            p.start()
+        
+        # Wait for all subprocesses with the same sequence to complete
+        for p in processes:
+            p.join()
 
 # Sample Data Creation
 task_list1 = [Task(task_id=1, subprocess_id=101, process_id=1, sequence=1),
