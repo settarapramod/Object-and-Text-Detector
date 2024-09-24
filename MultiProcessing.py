@@ -1,60 +1,73 @@
+import multiprocessing
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from random import randint
 
-# Define a simple Task class with a sequence attribute
+# Define Subprocess and Task classes
 class Task:
-    def __init__(self, task_id, name, sequence):
+    def __init__(self, task_id, process_id, sequence):
         self.task_id = task_id
-        self.name = name
+        self.process_id = process_id
         self.sequence = sequence
 
-    def __repr__(self):
-        return f"Task(name={self.name}, task_id={self.task_id}, sequence={self.sequence})"
+    def execute(self):
+        print(f"Executing Task {self.task_id} from Process {self.process_id} with Sequence {self.sequence}")
+        time.sleep(randint(1, 3))  # Simulate work with random delay
+        print(f"Task {self.task_id} from Process {self.process_id} completed")
 
-# Simulate a process function with sleep
-def process_task(task):
-    print(f"Started Task: {task.name}, Task ID: {task.task_id}, Sequence: {task.sequence}")
-    time.sleep(2)  # Simulate work with sleep
-    print(f"Completed Task: {task.name}, Task ID: {task.task_id}, Sequence: {task.sequence}")
-    return task
 
-# Function to process tasks in parallel within a sequence
-def process_tasks_in_parallel(tasks, max_workers):
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(process_task, task) for task in tasks]
-        for future in as_completed(futures):
-            future.result()  # Ensure all tasks complete before proceeding
+class Subprocess:
+    def __init__(self, process_id, subprocess_id, sequence, task_list):
+        self.process_id = process_id
+        self.subprocess_id = subprocess_id
+        self.sequence = sequence
+        self.task_list = task_list
 
-# Function to enforce sequential execution by sequence
-def process_sequence_group(task_group, max_workers):
-    sequence, tasks = task_group
-    print(f"\nProcessing tasks for sequence {sequence}\n")
-    process_tasks_in_parallel(tasks, max_workers)  # Process tasks in parallel within the same sequence
+    def execute(self):
+        print(f"Starting Subprocess {self.subprocess_id} from Process {self.process_id} with Sequence {self.sequence}")
+        processes = []
+        # Process tasks in parallel if they have the same sequence
+        for task in self.task_list:
+            p = multiprocessing.Process(target=task.execute)
+            processes.append(p)
+            p.start()
+        for p in processes:
+            p.join()  # Ensure all tasks are completed before moving to the next subprocess
+        print(f"Subprocess {self.subprocess_id} completed")
 
-# Create a list of Task objects with different sequences
-tasks = [
-    Task(task_id=0, name="Task 0", sequence=1),
-    Task(task_id=1, name="Task 1", sequence=2),
-    Task(task_id=2, name="Task 2", sequence=2),
-    Task(task_id=3, name="Task 3", sequence=3),
-    Task(task_id=4, name="Task 4", sequence=3)
+
+# Simulate the data with subprocesses and tasks
+subprocesses = [
+    Subprocess(process_id=1, subprocess_id=101, sequence=1, task_list=[
+        Task(task_id=1, process_id=1, sequence=1),
+        Task(task_id=2, process_id=1, sequence=1)
+    ]),
+    Subprocess(process_id=1, subprocess_id=102, sequence=2, task_list=[
+        Task(task_id=3, process_id=1, sequence=2),
+        Task(task_id=4, process_id=1, sequence=2)
+    ]),
+    Subprocess(process_id=2, subprocess_id=103, sequence=1, task_list=[
+        Task(task_id=5, process_id=2, sequence=1),
+        Task(task_id=6, process_id=2, sequence=1)
+    ]),
 ]
 
-# Function to run the entire process
-def run_tasks_in_sequence(tasks, max_workers):
-    # Group tasks by sequence
-    grouped_tasks = {}
-    for task in tasks:
-        if task.sequence not in grouped_tasks:
-            grouped_tasks[task.sequence] = []
-        grouped_tasks[task.sequence].append(task)
+# Function to process subprocesses in sequence, with parallel tasks
+def process_subprocesses(subprocesses):
+    # Sort subprocesses by sequence to ensure sequential execution
+    subprocesses.sort(key=lambda sp: sp.sequence)
+    
+    # Group subprocesses by sequence and process in parallel
+    for sequence in sorted(set(sp.sequence for sp in subprocesses)):
+        print(f"Processing Subprocesses with Sequence {sequence}")
+        processes = []
+        for sp in [sp for sp in subprocesses if sp.sequence == sequence]:
+            p = multiprocessing.Process(target=sp.execute)
+            processes.append(p)
+            p.start()
+        for p in processes:
+            p.join()  # Ensure all subprocesses in this sequence are completed
+        print(f"Completed Subprocesses with Sequence {sequence}\n")
 
-    # Sort by sequence to process in ascending order
-    for sequence in sorted(grouped_tasks.keys()):
-        process_sequence_group((sequence, grouped_tasks[sequence]), max_workers)
-
-# Set the number of parallel workers (control the number of processes)
-max_workers = 2  # You can change this based on your machine's capability
-
-# Run the tasks
-run_tasks_in_sequence(tasks, max_workers)
+# Execute the processing
+if __name__ == "__main__":
+    process_subprocesses(subprocesses)
