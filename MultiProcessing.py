@@ -2,7 +2,7 @@ import multiprocessing
 import time
 from collections import defaultdict
 
-# Define the Subprocess class
+# Define the SubProcess class
 class SubProcess:
     def __init__(self, process_id, subprocess_id, sequence, tasks):
         self.process_id = process_id
@@ -25,7 +25,7 @@ def process_task(task):
     print(f"Task {task.task_id} from Subprocess {task.subprocess_id} completed.")
 
 # Simulate subprocess processing
-def process_subprocess(subprocess):
+def process_subprocess(subprocess, pool):
     print(f"Processing Subprocess {subprocess.subprocess_id} (Sequence {subprocess.sequence})")
     
     # Group tasks by their sequence for parallel processing
@@ -35,38 +35,24 @@ def process_subprocess(subprocess):
     
     # Process tasks in sequence order
     for sequence in sorted(tasks_by_sequence):
-        # Parallel processing of tasks with the same sequence
-        processes = []
-        for task in tasks_by_sequence[sequence]:
-            p = multiprocessing.Process(target=process_task, args=(task,))
-            processes.append(p)
-            p.start()
-        
-        # Wait for all tasks in the current sequence to finish
-        for p in processes:
-            p.join()
+        # Use pool to parallel process tasks with the same sequence
+        pool.map(process_task, tasks_by_sequence[sequence])
     
     print(f"Subprocess {subprocess.subprocess_id} completed.")
 
-# Function to process all subprocesses
-def process_subprocesses(subprocesses):
-    # Group subprocesses by their sequence for parallel processing
-    subprocess_by_sequence = defaultdict(list)
-    for subprocess in subprocesses:
-        subprocess_by_sequence[subprocess.sequence].append(subprocess)
-    
-    # Process subprocesses in sequence order
-    for sequence in sorted(subprocess_by_sequence):
-        # Parallel processing of subprocesses with the same sequence
-        processes = []
-        for subprocess in subprocess_by_sequence[sequence]:
-            p = multiprocessing.Process(target=process_subprocess, args=(subprocess,))
-            processes.append(p)
-            p.start()
+# Function to process all subprocesses with control over the number of processes
+def process_subprocesses(subprocesses, max_processes):
+    # Create a multiprocessing pool with a limited number of processes
+    with multiprocessing.Pool(processes=max_processes) as pool:
+        # Group subprocesses by their sequence for parallel processing
+        subprocess_by_sequence = defaultdict(list)
+        for subprocess in subprocesses:
+            subprocess_by_sequence[subprocess.sequence].append(subprocess)
         
-        # Wait for all subprocesses in the current sequence to finish
-        for p in processes:
-            p.join()
+        # Process subprocesses in sequence order
+        for sequence in sorted(subprocess_by_sequence):
+            # Use pool to parallel process subprocesses with the same sequence
+            pool.starmap(process_subprocess, [(subprocess, pool) for subprocess in subprocess_by_sequence[sequence]])
 
 # Sample Data Creation
 task_list1 = [Task(task_id=1, subprocess_id=101, process_id=1, sequence=1),
@@ -88,6 +74,9 @@ subprocess3 = SubProcess(process_id=1, subprocess_id=103, sequence=1, tasks=task
 # List of subprocesses to process
 subprocesses = [subprocess1, subprocess2, subprocess3]
 
+# User-defined max number of processes to run in parallel
+MAX_PROCESSES = 4  # You can change this value to control the level of parallelism
+
 # Process all subprocesses
 if __name__ == '__main__':
-    process_subprocesses(subprocesses)
+    process_subprocesses(subprocesses, MAX_PROCESSES)
