@@ -1,0 +1,68 @@
+Here’s a paraphrase of the text from the image in clearer English:
+
+
+---
+
+Success and Achievements:
+
+Enhanced the reload framework by adding additional capabilities, enabling its repeated use, unlike before. Incorporated a robust logging mechanism and new features to ensure no incorrect dates are set, preventing the generation of inaccurate files.
+
+Developed and deployed a Tableau dashboard to accommodate evolving business requirements in a timely manner.
+
+
+Other Activities:
+
+Collaborated with team members and contributed to multiple white papers.
+
+Dedicated time to social responsibility by participating in a CSR activity.
+
+
+Learning Journey:
+
+Gained basic knowledge of JavaScript and the React framework.
+
+Began learning about GCP tools and services.
+
+
+CCaaS:
+
+Created a generic Python script that executes the given SQL query on a specified server.
+
+Started collaborating with the core CCaaS team to develop frameworks that provide ETL as a service.
+
+
+TROG:
+
+Contributed additional resources to support the TROG initiative, playing a part in its success.
+
+
+Indigo Testing Framework:
+
+Undertook a stretch assignment to build a simple end-to-end proof of concept (POC) to automate the testing of the Indigo forms' capabilities.
+
+
+Area of Focus:
+
+Deepening knowledge of the banking domain.
+
+Pursuing advanced certifications in cloud, machine learning, and data science, currently enrolled in GCP courses.
+
+Developing proficiency in GCP to contribute to the team’s application development efforts.
+
+Analyzing ECCOS space data to identify and address valuable problems.
+
+
+Risk Overlay:
+
+Implemented all changes with comprehensive testing, including edge cases.
+
+Successfully completed all enhancements within the given timeframe, ensuring compliance with industry standards.
+
+Regularly completed the STAMP process, accurately identified, and reported phishing emails.
+
+
+
+---
+
+Let me know if you would like any further modifications or clarifications!
+
