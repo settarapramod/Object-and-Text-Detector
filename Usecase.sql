@@ -1,81 +1,87 @@
-WITH Schedule AS (
+WITH AgentSchedule AS (
     SELECT 
-        CAST('2024-10-16 07:30:00' AS DATETIME) AS start_time, 
-        CAST('2024-10-16 14:00:00' AS DATETIME) AS end_time,
-        CAST('2024-10-16 09:30:00' AS DATETIME) AS break1_start, 
-        CAST('2024-10-16 09:45:00' AS DATETIME) AS break1_end,
-        CAST('2024-10-16 11:45:00' AS DATETIME) AS break2_start, 
-        CAST('2024-10-16 12:15:00' AS DATETIME) AS break2_end
-),
-AgentLogins AS (
-    -- Example: Multiple login/logout sessions
-    SELECT 
-        CAST('2024-10-16 07:45:00' AS DATETIME) AS sign_in_time, 
-        CAST('2024-10-16 09:35:00' AS DATETIME) AS sign_out_time
-    UNION ALL
-    SELECT 
-        CAST('2024-10-16 09:50:00' AS DATETIME), 
-        CAST('2024-10-16 12:00:00' AS DATETIME)
-    UNION ALL
-    SELECT 
-        CAST('2024-10-16 12:20:00' AS DATETIME), 
-        CAST('2024-10-16 13:45:00' AS DATETIME)
-),
-AdjustedLogins AS (
-    -- Adjust login sessions to fit within the working schedule
-    SELECT 
-        CASE 
-            WHEN sign_in_time > s.start_time THEN sign_in_time 
-            ELSE s.start_time 
-        END AS actual_start,
-        CASE 
-            WHEN sign_out_time < s.end_time THEN sign_out_time 
-            ELSE s.end_time 
-        END AS actual_end,
-        al.sign_in_time, al.sign_out_time
-    FROM 
-        AgentLogins al
-    CROSS JOIN 
-        Schedule s
-    WHERE 
-        sign_out_time > s.start_time AND sign_in_time < s.end_time
+        AgentId, 
+        CAST(StartDate AS DATE) AS WorkDay, 
+        StartDate AS shift_start, 
+        EndDate AS shift_end,
+        DATEDIFF(MINUTE, StartDate, EndDate) AS shift_minutes
+    FROM Schedule
+    WHERE segmenttype = 'C'  -- Shift times only
 ),
 Breaks AS (
-    -- Extract breaks that overlap with any login session
     SELECT 
-        break_start, break_end
-    FROM (
-        SELECT break1_start AS break_start, break1_end AS break_end FROM Schedule
-        UNION ALL
-        SELECT break2_start, break2_end FROM Schedule
-    ) b
-    JOIN AdjustedLogins al 
-      ON b.break_end > al.actual_start AND b.break_start < al.actual_end
+        AgentId, 
+        StartDate AS break_start, 
+        EndDate AS break_end
+    FROM Schedule
+    WHERE segmenttype = 'B'  -- Break times only
+),
+LoginSessions AS (
+    SELECT 
+        agentid, 
+        CAST(timen AS DATE) AS WorkDay, 
+        timen AS login_time, 
+        timeout AS logout_time
+    FROM AgentLogins
+),
+AdjustedLogins AS (
+    -- Adjust login sessions to fit within the shift time
+    SELECT 
+        ls.agentid,
+        ls.WorkDay,
+        CASE 
+            WHEN ls.login_time > s.shift_start THEN ls.login_time 
+            ELSE s.shift_start 
+        END AS actual_login,
+        CASE 
+            WHEN ls.logout_time < s.shift_end THEN ls.logout_time 
+            ELSE s.shift_end 
+        END AS actual_logout
+    FROM 
+        LoginSessions ls
+    JOIN AgentSchedule s 
+        ON ls.agentid = s.AgentId AND ls.WorkDay = s.WorkDay
+    WHERE 
+        ls.logout_time > s.shift_start AND ls.login_time < s.shift_end
 ),
 BreakMinutes AS (
-    -- Calculate total break minutes overlapping with working periods
+    -- Calculate break minutes overlapping with login sessions
     SELECT 
+        al.agentid,
+        al.WorkDay,
         SUM(DATEDIFF(MINUTE, 
             CASE 
-                WHEN b.break_start > al.actual_start THEN b.break_start 
-                ELSE al.actual_start 
+                WHEN b.break_start > al.actual_login THEN b.break_start 
+                ELSE al.actual_login 
             END, 
             CASE 
-                WHEN b.break_end < al.actual_end THEN b.break_end 
-                ELSE al.actual_end 
+                WHEN b.break_end < al.actual_logout THEN b.break_end 
+                ELSE al.actual_logout 
             END
         )) AS total_break_minutes
-    FROM Breaks b
+    FROM 
+        Breaks b
     JOIN AdjustedLogins al 
-      ON b.break_end > al.actual_start AND b.break_start < al.actual_end
+        ON b.AgentId = al.agentid
+        AND b.break_end > al.actual_login 
+        AND b.break_start < al.actual_logout
+    GROUP BY al.agentid, al.WorkDay
 )
--- Final query to compute both compliance minutes and total worked minutes
+-- Final query to compute compliance minutes, total worked minutes, and shift minutes
 SELECT 
-    -- Compliance minutes (within schedule, excluding breaks)
-    SUM(DATEDIFF(MINUTE, actual_start, actual_end)) 
-    - COALESCE((SELECT total_break_minutes FROM BreakMinutes), 0) AS compliance_minutes,
-
-    -- Total minutes worked (regardless of schedule)
-    SUM(DATEDIFF(MINUTE, sign_in_time, sign_out_time)) AS total_worked_minutes
+    s.AgentId,
+    s.WorkDay,
+    s.shift_minutes,  -- Total shift minutes
+    SUM(DATEDIFF(MINUTE, al.actual_login, al.actual_logout)) 
+        - COALESCE(bm.total_break_minutes, 0) AS compliance_minutes,  -- Compliance minutes (shift minus breaks)
+    SUM(DATEDIFF(MINUTE, ls.login_time, ls.logout_time)) AS total_worked_minutes  -- Total minutes worked, regardless of shift
 FROM 
-    AdjustedLogins;
+    AgentSchedule s
+JOIN 
+    AdjustedLogins al ON s.AgentId = al.agentid AND s.WorkDay = al.WorkDay
+JOIN 
+    LoginSessions ls ON al.agentid = ls.agentid AND al.WorkDay = ls.WorkDay
+LEFT JOIN 
+    BreakMinutes bm ON al.agentid = bm.agentid AND al.WorkDay = bm.WorkDay
+GROUP BY 
+    s.AgentId, s.WorkDay, s.shift_minutes;
