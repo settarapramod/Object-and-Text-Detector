@@ -8,7 +8,7 @@ WITH Schedule AS (
         CAST('2024-10-16 12:15:00' AS DATETIME) AS break2_end
 ),
 AgentLogins AS (
-    -- Example of multiple login and logout sessions for the agent
+    -- Example: Multiple login/logout sessions
     SELECT 
         CAST('2024-10-16 07:45:00' AS DATETIME) AS sign_in_time, 
         CAST('2024-10-16 09:35:00' AS DATETIME) AS sign_out_time
@@ -22,27 +22,31 @@ AgentLogins AS (
         CAST('2024-10-16 13:45:00' AS DATETIME)
 ),
 AdjustedLogins AS (
-    -- Adjust each login session to fit within the scheduled work hours
+    -- Adjust login sessions to fit within the working schedule
     SELECT 
-        GREATEST(sign_in_time, s.start_time) AS actual_start,
-        LEAST(sign_out_time, s.end_time) AS actual_end
+        CASE 
+            WHEN sign_in_time > s.start_time THEN sign_in_time 
+            ELSE s.start_time 
+        END AS actual_start,
+        CASE 
+            WHEN sign_out_time < s.end_time THEN sign_out_time 
+            ELSE s.end_time 
+        END AS actual_end
     FROM 
-        AgentLogins al, Schedule s
+        AgentLogins al
+    CROSS JOIN 
+        Schedule s
     WHERE 
         sign_out_time > s.start_time AND sign_in_time < s.end_time
 ),
 Breaks AS (
-    -- Extract the breaks that overlap with any login sessions
+    -- Extract breaks that overlap with any login session
     SELECT 
         break_start, break_end
     FROM (
-        SELECT 
-            break1_start AS break_start, break1_end AS break_end 
-        FROM Schedule
+        SELECT break1_start AS break_start, break1_end AS break_end FROM Schedule
         UNION ALL
-        SELECT 
-            break2_start, break2_end 
-        FROM Schedule
+        SELECT break2_start, break2_end FROM Schedule
     ) b
     JOIN AdjustedLogins al 
       ON b.break_end > al.actual_start AND b.break_start < al.actual_end
@@ -51,16 +55,22 @@ BreakMinutes AS (
     -- Calculate total break minutes overlapping with working periods
     SELECT 
         SUM(DATEDIFF(MINUTE, 
-            GREATEST(b.break_start, al.actual_start), 
-            LEAST(b.break_end, al.actual_end)
+            CASE 
+                WHEN b.break_start > al.actual_start THEN b.break_start 
+                ELSE al.actual_start 
+            END, 
+            CASE 
+                WHEN b.break_end < al.actual_end THEN b.break_end 
+                ELSE al.actual_end 
+            END
         )) AS total_break_minutes
     FROM Breaks b
     JOIN AdjustedLogins al 
       ON b.break_end > al.actual_start AND b.break_start < al.actual_end
 )
--- Final query to calculate total working minutes excluding breaks
+-- Final query to compute total working minutes excluding breaks
 SELECT 
-    SUM(DATEDIFF(MINUTE, actual_start, actual_end)) - 
-    COALESCE((SELECT total_break_minutes FROM BreakMinutes), 0) AS total_working_minutes
+    SUM(DATEDIFF(MINUTE, actual_start, actual_end)) 
+    - COALESCE((SELECT total_break_minutes FROM BreakMinutes), 0) AS total_working_minutes
 FROM 
     AdjustedLogins;
