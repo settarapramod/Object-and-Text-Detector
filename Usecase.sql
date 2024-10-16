@@ -31,7 +31,8 @@ AdjustedLogins AS (
         CASE 
             WHEN sign_out_time < s.end_time THEN sign_out_time 
             ELSE s.end_time 
-        END AS actual_end
+        END AS actual_end,
+        al.sign_in_time, al.sign_out_time
     FROM 
         AgentLogins al
     CROSS JOIN 
@@ -68,9 +69,13 @@ BreakMinutes AS (
     JOIN AdjustedLogins al 
       ON b.break_end > al.actual_start AND b.break_start < al.actual_end
 )
--- Final query to compute total working minutes excluding breaks
+-- Final query to compute both compliance minutes and total worked minutes
 SELECT 
+    -- Compliance minutes (within schedule, excluding breaks)
     SUM(DATEDIFF(MINUTE, actual_start, actual_end)) 
-    - COALESCE((SELECT total_break_minutes FROM BreakMinutes), 0) AS total_working_minutes
+    - COALESCE((SELECT total_break_minutes FROM BreakMinutes), 0) AS compliance_minutes,
+
+    -- Total minutes worked (regardless of schedule)
+    SUM(DATEDIFF(MINUTE, sign_in_time, sign_out_time)) AS total_worked_minutes
 FROM 
     AdjustedLogins;
