@@ -1,98 +1,57 @@
-WITH Compliance AS (
+-- Step 1: Create CTE to Adjust Sign-in and Sign-out Times Within Shift Boundaries
+WITH ShiftBoundaries AS (
     SELECT 
-        AgentId,
-        SUM(DATEDIFF(MINUTE, 
-            CASE WHEN TimeIn < (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeIn END,
-            CASE WHEN TimeOut > (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeOut END
-        )) AS ComplianceMinutes
-    FROM SignInOut
-    WHERE TimeOut >= (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C')
-      AND TimeIn <= (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C')
-    GROUP BY AgentId
-)
-SELECT * FROM Compliance;
-WITH Adherence AS (
-    SELECT 
-        AgentId,
-        SUM(DATEDIFF(MINUTE, 
-            CASE WHEN TimeIn < (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeIn END,
-            CASE WHEN TimeOut > (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeOut END
-        )) - (
-            SELECT ISNULL(SUM(DATEDIFF(MINUTE, StartDate, EndDate)), 0)
-            FROM Schedule
-            WHERE SegmentType = 'B'
-        ) AS AdherenceMinutes
-    FROM SignInOut
-    WHERE TimeOut >= (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C')
-      AND TimeIn <= (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C')
-    GROUP BY AgentId
-)
-SELECT * FROM Adherence;
-
-WITH Scheduled AS (
-    SELECT 
-        AgentId,
-        DATEDIFF(MINUTE, 
-            MIN(StartDate), MAX(EndDate)) - (
-            SELECT ISNULL(SUM(DATEDIFF(MINUTE, StartDate, EndDate)), 0)
-            FROM Schedule
-            WHERE SegmentType = 'B'
-        ) AS ScheduledMinutes
-    FROM Schedule
-    WHERE SegmentType = 'C'
-    GROUP BY AgentId
-)
-SELECT * FROM Scheduled;
-
-WITH Compliance AS (
-    SELECT 
-        AgentId,
-        SUM(DATEDIFF(MINUTE, 
-            CASE WHEN TimeIn < (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeIn END,
-            CASE WHEN TimeOut > (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeOut END
-        )) AS ComplianceMinutes
-    FROM SignInOut
-    GROUP BY AgentId
+        SI.AgentId,
+        CAST(SI.TimeIn AS DATE) AS WorkDate,
+        CASE 
+            WHEN SI.TimeIn < S.StartDate THEN S.StartDate 
+            ELSE SI.TimeIn 
+        END AS AdjustedTimeIn,
+        CASE 
+            WHEN SI.TimeOut > S.EndDate THEN S.EndDate 
+            ELSE SI.TimeOut 
+        END AS AdjustedTimeOut
+    FROM SignInOut SI
+    JOIN Schedule S 
+        ON SI.AgentId = S.AgentId 
+        AND S.SegmentType = 'C'  -- Only consider shift (C) segments
+        AND SI.TimeOut >= S.StartDate 
+        AND SI.TimeIn <= S.EndDate
 ),
-Adherence AS (
+
+-- Step 2: Calculate Total Compliance Minutes Per Agent Per Day
+Compliance AS (
     SELECT 
         AgentId,
-        SUM(DATEDIFF(MINUTE, 
-            CASE WHEN TimeIn < (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MIN(StartDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeIn END,
-            CASE WHEN TimeOut > (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') 
-                 THEN (SELECT MAX(EndDate) FROM Schedule WHERE SegmentType = 'C') ELSE TimeOut END
-        )) - (
-            SELECT ISNULL(SUM(DATEDIFF(MINUTE, StartDate, EndDate)), 0)
-            FROM Schedule
-            WHERE SegmentType = 'B'
-        ) AS AdherenceMinutes
-    FROM SignInOut
-    GROUP BY AgentId
+        WorkDate,
+        SUM(DATEDIFF(MINUTE, AdjustedTimeIn, AdjustedTimeOut)) AS ComplianceMinutes
+    FROM ShiftBoundaries
+    GROUP BY AgentId, WorkDate
 ),
-Scheduled AS (
+
+-- Step 3: Calculate Total Break Minutes Per Agent Per Day
+Breaks AS (
     SELECT 
         AgentId,
-        DATEDIFF(MINUTE, MIN(StartDate), MAX(EndDate)) - (
-            SELECT ISNULL(SUM(DATEDIFF(MINUTE, StartDate, EndDate)), 0)
-            FROM Schedule
-            WHERE SegmentType = 'B'
-        ) AS ScheduledMinutes
+        CAST(StartDate AS DATE) AS WorkDate,
+        SUM(DATEDIFF(MINUTE, StartDate, EndDate)) AS TotalBreakMinutes
     FROM Schedule
-    WHERE SegmentType = 'C'
-    GROUP BY AgentId
+    WHERE SegmentType = 'B'  -- Only consider break (B) segments
+    GROUP BY AgentId, CAST(StartDate AS DATE)
 )
+
+-- Step 4: Final Query to Calculate Adherence and Scheduled Minutes
 SELECT 
     C.AgentId,
+    C.WorkDate,
     C.ComplianceMinutes,
-    A.AdherenceMinutes,
-    S.ScheduledMinutes
+    DATEDIFF(MINUTE, S.StartDate, S.EndDate) - ISNULL(B.TotalBreakMinutes, 0) AS ScheduledMinutes,
+    C.ComplianceMinutes - ISNULL(B.TotalBreakMinutes, 0) AS AdherenceMinutes
 FROM Compliance C
-JOIN Adherence A ON C.AgentId = A.AgentId
-JOIN Scheduled S ON C.AgentId = S.AgentId;
+JOIN Schedule S 
+    ON C.AgentId = S.AgentId 
+    AND S.SegmentType = 'C' 
+    AND C.WorkDate = CAST(S.StartDate AS DATE)
+LEFT JOIN Breaks B 
+    ON C.AgentId = B.AgentId 
+    AND C.WorkDate = B.WorkDate;
