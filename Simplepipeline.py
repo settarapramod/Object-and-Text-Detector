@@ -45,3 +45,29 @@ def run():
 
 if __name__ == '__main__':
     run()
+
+from airflow import models
+from airflow.providers.google.cloud.operators.dataflow import DataflowPythonOperator
+from datetime import datetime
+
+default_args = {
+    'start_date': datetime(2024, 10, 18),
+    'retries': 1,
+}
+
+with models.DAG(
+    'beam_bq_pipeline_dag',
+    default_args=default_args,
+    schedule_interval=None,
+) as dag:
+
+    run_beam_bq_pipeline = DataflowPythonOperator(
+        task_id='run_beam_bq_pipeline',
+        py_file='gs://your-composer-bucket/dags/beam_bq_pipeline.py',
+        job_name='composer-bq-beam-job',
+        project_id='your-gcp-project-id',
+        location='your-region',
+        dataflow_default_options={
+            'tempLocation': 'gs://your-bucket/temp/',
+        },
+    )
