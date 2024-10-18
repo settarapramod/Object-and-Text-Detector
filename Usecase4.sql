@@ -19,8 +19,18 @@ WITH ShiftBoundaries AS (
         AND SI.TimeIn <= S.EndDate
 ),
 
--- Step 2: Calculate Total Break Overlaps for the Day
-DailyBreakOverlaps AS (
+-- Step 2: Calculate Total Compliance Minutes per Agent per Day
+ComplianceMinutes AS (
+    SELECT 
+        AgentId,
+        WorkDate,
+        SUM(DATEDIFF(MINUTE, AdjustedTimeIn, AdjustedTimeOut)) AS TotalComplianceMinutes
+    FROM ShiftBoundaries
+    GROUP BY AgentId, WorkDate
+),
+
+-- Step 3: Calculate Total Break Overlaps (minutes worked during breaks)
+BreakOverlaps AS (
     SELECT 
         SB.AgentId,
         SB.WorkDate,
@@ -29,7 +39,7 @@ DailyBreakOverlaps AS (
                 CASE WHEN SB.AdjustedTimeIn < B.StartDate THEN B.StartDate ELSE SB.AdjustedTimeIn END,
                 CASE WHEN SB.AdjustedTimeOut > B.EndDate THEN B.EndDate ELSE SB.AdjustedTimeOut END
             )
-        ) AS TotalBreakMinutes
+        ) AS TotalBreakOverlapMinutes
     FROM ShiftBoundaries SB
     JOIN Schedule B 
         ON SB.AgentId = B.AgentId 
@@ -39,18 +49,8 @@ DailyBreakOverlaps AS (
     GROUP BY SB.AgentId, SB.WorkDate
 ),
 
--- Step 3: Calculate Compliance Minutes per Agent per Day
-DailyCompliance AS (
-    SELECT 
-        AgentId,
-        WorkDate,
-        SUM(DATEDIFF(MINUTE, AdjustedTimeIn, AdjustedTimeOut)) AS TotalComplianceMinutes
-    FROM ShiftBoundaries
-    GROUP BY AgentId, WorkDate
-),
-
--- Step 4: Calculate Total Scheduled and Actual Work Minutes per Agent per Day
-DailyScheduled AS (
+-- Step 4: Calculate Total Scheduled Minutes and Break Minutes per Agent per Day
+ScheduledBreaks AS (
     SELECT 
         S.AgentId,
         CAST(S.StartDate AS DATE) AS WorkDate,
@@ -63,15 +63,15 @@ DailyScheduled AS (
     GROUP BY S.AgentId, CAST(S.StartDate AS DATE)
 )
 
--- Step 5: Final Query to Aggregate and Calculate Adherence, Compliance, and Actual Scheduled Minutes
+-- Step 5: Final Query to Aggregate Results to One Record per Agent per Day
 SELECT 
-    DC.AgentId,
-    DC.WorkDate,
-    DC.TotalComplianceMinutes AS ComplianceMinutes,
-    DC.TotalComplianceMinutes - ISNULL(DBO.TotalBreakMinutes, 0) AS AdherenceMinutes,
-    DS.TotalScheduledMinutes - DS.TotalBreakMinutes AS ActualScheduledMinutes
-FROM DailyCompliance DC
-JOIN DailyScheduled DS 
-    ON DC.AgentId = DS.AgentId AND DC.WorkDate = DS.WorkDate
-LEFT JOIN DailyBreakOverlaps DBO 
-    ON DC.AgentId = DBO.AgentId AND DC.WorkDate = DBO.WorkDate;
+    C.AgentId,
+    C.WorkDate,
+    C.TotalComplianceMinutes AS ComplianceMinutes,
+    C.TotalComplianceMinutes - ISNULL(B.TotalBreakOverlapMinutes, 0) AS AdherenceMinutes,
+    S.TotalScheduledMinutes - S.TotalBreakMinutes AS ActualScheduledMinutes
+FROM ComplianceMinutes C
+JOIN ScheduledBreaks S 
+    ON C.AgentId = S.AgentId AND C.WorkDate = S.WorkDate
+LEFT JOIN BreakOverlaps B 
+    ON C.AgentId = B.AgentId AND C.WorkDate = B.WorkDate;
