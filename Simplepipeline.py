@@ -1,28 +1,46 @@
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.io.gcp.bigquery import ReadFromBigQuery, WriteToBigQuery
 
-class ProcessData(beam.DoFn):
+class CountWords(beam.DoFn):
     def process(self, element):
-        # Split CSV rows into fields
-        id, name, age = element.split(',')
-        yield {'id': int(id), 'name': name, 'age': int(age) + 1}  # Increment age by 1
+        word = element['word']
+        yield (word, 1)
 
 def run():
-    # Set pipeline options for Dataflow runner
+    # Define pipeline options for Dataflow execution
     options = PipelineOptions(
         runner='DataflowRunner',
         project='your-gcp-project-id',
         region='your-region',
         temp_location='gs://your-bucket/temp/',
-        job_name='sample-beam-job'
+        job_name='bq-beam-job'
     )
+
+    # Define the schema for the output table
+    output_schema = {
+        "fields": [
+            {"name": "word", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "count", "type": "INTEGER", "mode": "REQUIRED"}
+        ]
+    }
 
     with beam.Pipeline(options=options) as p:
         (
             p
-            | 'ReadFromGCS' >> beam.io.ReadFromText('gs://your-bucket/sample.csv', skip_header_lines=1)
-            | 'ProcessData' >> beam.ParDo(ProcessData())
-            | 'WriteToGCS' >> beam.io.WriteToText('gs://your-bucket/output/result', file_name_suffix='.json')
+            | 'ReadFromBigQuery' >> ReadFromBigQuery(
+                query='SELECT word FROM `bigquery-public-data.samples.shakespeare`',
+                use_standard_sql=True
+            )
+            | 'CountWords' >> beam.ParDo(CountWords())
+            | 'SumCounts' >> beam.CombinePerKey(sum)
+            | 'FormatForBQ' >> beam.Map(lambda x: {'word': x[0], 'count': x[1]})
+            | 'WriteToBigQuery' >> WriteToBigQuery(
+                table='your-gcp-project-id:my_dataset.word_counts',
+                schema=output_schema,
+                write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+                create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+            )
         )
 
 if __name__ == '__main__':
