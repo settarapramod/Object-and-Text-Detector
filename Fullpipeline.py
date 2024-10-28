@@ -33,42 +33,44 @@ def generate_bq_schema(sample_row):
 class ExtractSampleRow(beam.DoFn):
     """Extract a sample row for schema generation."""
     def process(self, element):
-        # Emit the first element to be used as a schema reference
-        yield element
-        return  # Stop after yielding the first row
+        yield element  # Emit the first row
 
 def run():
     # Set up pipeline options
     options = PipelineOptions()
     gcp_options = options.view_as(GoogleCloudOptions)
     gcp_options.project = PROJECT_ID
-    gcp_options.region = 'us-central1'  # Set your region
+    gcp_options.region = 'us-central1'
     gcp_options.temp_location = f'gs://{GCS_BUCKET}/temp/'
 
-    # Initialize BigQuery client for query execution
+    # Initialize BigQuery client for running queries
     bq_client = bigquery.Client()
 
     with beam.Pipeline(options=options) as pipeline:
         # Step 1: Read Avro data from GCS
         avro_data = pipeline | 'Read Avro' >> beam.io.ReadFromAvro(AVRO_FILE_PATH)
 
-        # Step 2: Extract a sample row to generate the schema
-        sample_row = (
+        # Step 2: Extract a sample row and collect it as a side input
+        sample_row_pcoll = (
             avro_data
             | 'Extract Sample Row' >> beam.ParDo(ExtractSampleRow())
-            | 'Get First Row' >> beam.combiners.Sample.FixedSizeGlobally(1)
+            | 'Sample One Row' >> beam.combiners.Sample.FixedSizeGlobally(1)
         )
 
-        # Step 3: Write data to the BigQuery staging table
-        (
-            avro_data
-            | 'Write to Staging BQ' >> WriteToBigQuery(
-                BQ_STAGING_TABLE,
-                schema=lambda _, row: generate_bq_schema(row[0]),
-                write_disposition=BigQueryDisposition.WRITE_TRUNCATE,
-                create_disposition=BigQueryDisposition.CREATE_IF_NEEDED
+        # Step 3: Write to the BigQuery staging table using the dynamically generated schema
+        def write_with_dynamic_schema(data, sample_row):
+            schema = generate_bq_schema(sample_row[0])  # Extract schema from sample row
+            return (
+                data
+                | 'Write to Staging BQ' >> WriteToBigQuery(
+                    BQ_STAGING_TABLE,
+                    schema=schema,
+                    write_disposition=BigQueryDisposition.WRITE_TRUNCATE,
+                    create_disposition=BigQueryDisposition.CREATE_IF_NEEDED
+                )
             )
-        )
+
+        avro_data | beam.FlatMap(write_with_dynamic_schema, beam.pvalue.AsSingleton(sample_row_pcoll))
 
     # Step 4: Load data from staging to reporting table
     query = f"""
