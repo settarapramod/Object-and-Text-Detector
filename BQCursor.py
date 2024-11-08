@@ -10,13 +10,13 @@ class BigQueryCursor:
         self._arraysize = 1  # Default batch size
         self._query = None
         self.description = None  # Metadata about columns
-        self.rowcount = -1  # -1 indicates that the row count is unknown
+        self.rowcount = -1  # -1 indicates the row count is unknown
 
     def execute(self, query: str, params: Optional[Tuple] = None) -> None:
         """Execute a query with optional parameters."""
         self._query = query
         if params:
-            query = query % params  # Simple parameter substitution
+            query = self._format_query_with_placeholders(query, params)
 
         # Execute the query and wait for the results
         self.query_job = self.client.query(query)
@@ -30,14 +30,27 @@ class BigQueryCursor:
     def executemany(self, query: str, param_list: List[Tuple]) -> None:
         """
         Execute the same query repeatedly with different parameter sets.
-        
-        For INSERTs or other DML operations that need to be repeated, each set
-        of parameters will be applied to the query and executed.
         """
         self._query = query
         for params in param_list:
-            formatted_query = query % params  # Simple parameter substitution
+            formatted_query = self._format_query_with_placeholders(query, params)
             self.client.query(formatted_query).result()  # Execute and wait for each query to complete
+
+    def _format_query_with_placeholders(self, query: str, params: Tuple) -> str:
+        """
+        Replace placeholders (`?`) in the query with parameters in a safe way.
+        """
+        formatted_params = []
+        for param in params:
+            if isinstance(param, str):
+                formatted_params.append(f"'{param}'")  # Quote strings safely
+            elif param is None:
+                formatted_params.append("NULL")  # Handle NULL values
+            else:
+                formatted_params.append(str(param))  # Convert other types to strings
+
+        # Replace `?` placeholders with formatted parameters
+        return query.replace("?", "{}").format(*formatted_params)
 
     def _get_description(self) -> List[Tuple[str, Any, None, None, None, None, None]]:
         """Generate column metadata for the `description` attribute."""
@@ -99,13 +112,13 @@ client = bigquery.Client()
 
 with BigQueryCursor(client) as cursor:
     # Executing a single query
-    cursor.execute("SELECT name, age FROM `your-project.your_dataset.people` WHERE age > %d", (25,))
+    cursor.execute("SELECT name, age FROM `your-project.your_dataset.people` WHERE age > ?", (25,))
     row = cursor.fetchone()
     if row:
         print(f"Fetched one: {row}")
 
     # Using executemany() for batch inserts
-    insert_query = "INSERT INTO `your-project.your_dataset.people` (name, age) VALUES ('%s', %d)"
+    insert_query = "INSERT INTO `your-project.your_dataset.people` (name, age) VALUES (?, ?)"
     data = [
         ('John Doe', 30),
         ('Jane Smith', 28),
