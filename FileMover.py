@@ -12,45 +12,39 @@ def chunked_iterator(iterable, chunk_size):
     while chunk := list(islice(it, chunk_size)):
         yield chunk
 
-def move_files_by_pattern_in_chunks(base_dir, dest_dir, patterns, chunk_size=1000):
+def move_files_by_pattern_in_chunks(base_dir, pattern_to_dest, chunk_size=1000):
     """
-    Moves files in chunks from the base directory to the destination directory based on naming patterns.
+    Moves files in chunks from the base directory to destinations based on naming patterns.
 
     :param base_dir: Path to the base directory containing the files.
-    :param dest_dir: Path to the destination directory where files will be moved.
-    :param patterns: Dictionary with patterns as keys and folder names as values.
+    :param pattern_to_dest: Dictionary with patterns as keys and their destination paths as values.
     :param chunk_size: Number of files to process in one batch.
     """
-    if not os.path.exists(dest_dir):
-        os.makedirs(dest_dir)
-
     all_files = [file for file in os.listdir(base_dir) if os.path.isfile(os.path.join(base_dir, file))]
     
     for file_chunk in chunked_iterator(all_files, chunk_size):
         for file_name in file_chunk:
             file_path = os.path.join(base_dir, file_name)
-            for pattern, folder_name in patterns.items():
+            for pattern, dest_path in pattern_to_dest.items():
                 if file_name.startswith(pattern):
-                    target_folder = os.path.join(dest_dir, folder_name)
-                    if not os.path.exists(target_folder):
-                        os.makedirs(target_folder)
-                    shutil.move(file_path, os.path.join(target_folder, file_name))
-                    print(f"Moved {file_name} to {target_folder}")
+                    if not os.path.exists(dest_path):
+                        os.makedirs(dest_path)
+                    shutil.move(file_path, os.path.join(dest_path, file_name))
+                    print(f"Moved {file_name} to {dest_path}")
                     break
 
 # Example usage
 if __name__ == "__main__":
     base_directory = "/path/to/base/directory"
-    destination_directory = "/path/to/destination/directory"
     
-    # Define patterns and their corresponding folder names
-    file_patterns = {
-        "abc": "abc",
-        "bcd": "bcd",
-        "ccd": "ccd"
+    # Define patterns and their corresponding destination paths
+    pattern_to_destination = {
+        "abc": "/path/to/destination/abc",
+        "bcd": "/path/to/destination/bcd",
+        "ccd": "/path/to/destination/ccd"
     }
     
     # Configurable chunk size
     chunk_size = 1000  # Adjust as needed
     
-    move_files_by_pattern_in_chunks(base_directory, destination_directory, file_patterns, chunk_size)
+    move_files_by_pattern_in_chunks(base_directory, pattern_to_destination, chunk_size)
