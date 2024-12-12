@@ -3,9 +3,13 @@ import shutil
 import logging
 from datetime import datetime
 
+# Ensure the log folder exists
+log_folder = "log"
+os.makedirs(log_folder, exist_ok=True)
+
 # Configure logging
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-log_file = f"log_{timestamp}.log"
+log_file = os.path.join(log_folder, f"log_{timestamp}.log")
 logging.basicConfig(
     filename=log_file,
     level=logging.INFO,
