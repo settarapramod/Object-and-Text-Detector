@@ -1,21 +1,83 @@
 import os
+import logging
+from datetime import datetime
 
-def validate_files(file_list_path):
+def setup_logger(log_dir, log_filename_prefix):
+    # Ensure the log directory exists
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Generate a log filename with a timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"{log_filename_prefix}_{timestamp}.log"
+    log_path = os.path.join(log_dir, log_filename)
+
+    # Configure the logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_path),
+            logging.StreamHandler()  # Also log to the console
+        ]
+    )
+    return log_path
+
+def validate_files(file_list_path, log_dir, display_console=True):
+    # Set up the logger
+    validation_log_path = setup_logger(log_dir, "validation_log")
+    failed_log_path = setup_logger(log_dir, "failed_log")
+
+    logging.info("File Validation Start")
+    logging.info("=" * 100)
+
+    # Read the file paths
     with open(file_list_path, 'r') as file:
         file_paths = [line.strip() for line in file]
 
-    missing_files = []
-    for file_path in file_paths:
-        if not os.path.exists(file_path):
-            missing_files.append(file_path)
+    failed_files = []
 
-    if missing_files:
-        print("The following files are missing:")
-        for missing_file in missing_files:
-            print(missing_file)
+    if display_console:
+        print("=" * 100)
+        print(f"{'FILE NAME':<30} | {'FILE PATH':<60} | {'STATUS':<10}")
+        print("-" * 100)
+
+    for file_path in file_paths:
+        if os.path.exists(file_path):
+            status = "PASSED"
+        else:
+            status = "FAILED"
+            failed_files.append(file_path)
+
+        file_name = os.path.basename(file_path)
+        log_entry = f"{file_name:<30} | {file_path:<60} | {status:<10}"
+        logging.info(log_entry)
+
+        if display_console:
+            print(log_entry)
+
+    if display_console:
+        print("=" * 100)
+
+    logging.info("=" * 100)
+    logging.info("File Validation End")
+
+    # Log failed files
+    if failed_files:
+        logging.info("Failed File Validation Start")
+        logging.info("=" * 100)
+        for failed_file in failed_files:
+            logging.info(f"FAILED: {failed_file}")
+        logging.info("=" * 100)
+        logging.info("Failed File Validation End")
+        if display_console:
+            print(f"Failed files log saved to {failed_log_path}")
     else:
-        print("All files are present.")
+        logging.info("All files passed validation. No failed log generated.")
+        if display_console:
+            print("All files passed validation. No failed log generated.")
 
 # Example Usage
-file_list_path = "all_files.txt"
-validate_files(file_list_path)
+file_list_path = "all_files.txt"  # File containing the list of file paths
+log_dir = "logs"  # Directory to save logs
+display_console_messages = True  # Set to False to suppress console messages
+validate_files(file_list_path, log_dir, display_console=display_console_messages)
