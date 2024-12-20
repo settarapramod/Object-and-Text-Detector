@@ -10,7 +10,12 @@ def validate_files(file_list_path, validation_log_path, failed_log_path, display
 
     # Start validation log
     validation_log.append(f"File Validation Start - {datetime.now()}\n")
-    validation_log.append("=" * 50 + "\n")
+    validation_log.append("=" * 80 + "\n")
+
+    if display_console:
+        print("=" * 80)
+        print(f"{'FILE NAME':<30} | {'FILE PATH':<40} | {'STATUS':<10}")
+        print("-" * 80)
 
     for file_path in file_paths:
         if os.path.exists(file_path):
@@ -19,30 +24,34 @@ def validate_files(file_list_path, validation_log_path, failed_log_path, display
             status = "FAILED"
             failed_files_log.append(file_path)  # Add failed file path to failed log
 
-        log_entry = f"File: {os.path.basename(file_path)} | Path: {file_path} | Status: {status}\n"
+        file_name = os.path.basename(file_path)
+        log_entry = f"{file_name:<30} | {file_path:<40} | {status:<10}\n"
         validation_log.append(log_entry)
 
         # Conditionally print to console
         if display_console:
-            print(log_entry.strip())
+            print(f"{file_name:<30} | {file_path:<40} | {status:<10}")
 
-    validation_log.append("=" * 50 + "\n")
+    if display_console:
+        print("=" * 80)
+
+    validation_log.append("=" * 80 + "\n")
     validation_log.append(f"File Validation End - {datetime.now()}\n")
 
     # Write validation log
     with open(validation_log_path, 'w') as log_file:
         log_file.writelines(validation_log)
     if display_console:
-        print(f"\nValidation log saved to {validation_log_path}.")
+        print(f"Validation log saved to {validation_log_path}.")
 
     # Write failed files log if there are missing files
     if failed_files_log:
         with open(failed_log_path, 'w') as failed_log_file:
             failed_log_file.write(f"Failed File Validation - {datetime.now()}\n")
-            failed_log_file.write("=" * 50 + "\n")
+            failed_log_file.write("=" * 80 + "\n")
             for failed_file in failed_files_log:
                 failed_log_file.write(f"{failed_file}\n")
-            failed_log_file.write("=" * 50 + "\n")
+            failed_log_file.write("=" * 80 + "\n")
         if display_console:
             print(f"Failed files log saved to {failed_log_path}.")
     else:
