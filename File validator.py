@@ -37,23 +37,29 @@ def validate_files(file_list_path, log_dir, display_console=True):
     failed_files = []
 
     if display_console:
-        print("=" * 100)
+        # Print a formatted header for the console log
+        print("\n" + "=" * 100)
         print(f"{'FILE NAME':<30} | {'FILE PATH':<60} | {'STATUS':<10}")
         print("-" * 100)
 
     for file_path in file_paths:
+        # Determine if the file exists
         if os.path.exists(file_path):
             status = "PASSED"
         else:
             status = "FAILED"
             failed_files.append(file_path)
 
+        # Extract the file name for logging and console display
         file_name = os.path.basename(file_path)
+
+        # Format the log entry
         log_entry = f"{file_name:<30} | {file_path:<60} | {status:<10}"
         logging.info(log_entry)
 
+        # Print the entry to the console if enabled
         if display_console:
-            print(log_entry)
+            print(f"{file_name:<30} | {file_path:<60} | {status:<10}")
 
     if display_console:
         print("=" * 100)
@@ -61,7 +67,7 @@ def validate_files(file_list_path, log_dir, display_console=True):
     logging.info("=" * 100)
     logging.info("File Validation End")
 
-    # Log failed files
+    # Log and display failed files
     if failed_files:
         logging.info("Failed File Validation Start")
         logging.info("=" * 100)
@@ -70,11 +76,11 @@ def validate_files(file_list_path, log_dir, display_console=True):
         logging.info("=" * 100)
         logging.info("Failed File Validation End")
         if display_console:
-            print(f"Failed files log saved to {failed_log_path}")
+            print(f"\nFailed files log saved to {failed_log_path}")
     else:
         logging.info("All files passed validation. No failed log generated.")
         if display_console:
-            print("All files passed validation. No failed log generated.")
+            print("\nAll files passed validation. No failed log generated.")
 
 # Example Usage
 file_list_path = "all_files.txt"  # File containing the list of file paths
