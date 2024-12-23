@@ -35,7 +35,12 @@ def consume_messages(broker_url, topic_name):
                 continue
 
         if messages:
-            infer_schema(messages)
+            schema, flat_schema = infer_schema(messages)
+            print("\nInferred Schema (Nested):")
+            print(json.dumps(schema, indent=2))
+
+            print("\nFlat Schema (Key-Value Pairs):")
+            print(json.dumps(flat_schema, indent=2))
         else:
             print("No messages found.")
     finally:
@@ -45,33 +50,47 @@ def infer_schema(messages):
     """
     Infer schema from a list of messages, including nested JSON structures.
     :param messages: List of JSON messages.
+    :return: Tuple containing nested schema and flat schema.
     """
-    print("\nInferred Schema:")
-    schema = {}
+    nested_schema = {}
+    flat_schema = {}
 
     for message in messages:
-        merge_schemas(schema, infer_nested_schema(message))
+        message_schema, message_flat_schema = infer_nested_schema(message)
+        merge_schemas(nested_schema, message_schema)
+        flat_schema.update(message_flat_schema)
 
-    print(json.dumps(schema, indent=2))
+    return nested_schema, flat_schema
 
-def infer_nested_schema(data):
+def infer_nested_schema(data, parent_key=''):
     """
     Recursively infer schema for nested JSON objects.
     :param data: JSON object or value.
-    :return: Schema representation as a dictionary.
+    :param parent_key: Dot notation for the parent keys (for flat schema).
+    :return: Tuple of nested schema and flat schema dictionary.
     """
+    nested_schema = {}
+    flat_schema = {}
+
     if isinstance(data, dict):
-        schema = {}
         for key, value in data.items():
-            schema[key] = infer_nested_schema(value)
-        return schema
+            full_key = f"{parent_key}.{key}" if parent_key else key
+            child_schema, child_flat_schema = infer_nested_schema(value, full_key)
+            nested_schema[key] = child_schema
+            flat_schema.update(child_flat_schema)
     elif isinstance(data, list):
         if data:
-            return [infer_nested_schema(data[0])]
+            child_schema, child_flat_schema = infer_nested_schema(data[0], parent_key)
+            nested_schema = [child_schema]
+            flat_schema.update(child_flat_schema)
         else:
-            return []
+            nested_schema = []
+            flat_schema[parent_key] = "list"
     else:
-        return type(data).__name__
+        nested_schema = type(data).__name__
+        flat_schema[parent_key] = type(data).__name__
+
+    return nested_schema, flat_schema
 
 def merge_schemas(schema1, schema2):
     """
