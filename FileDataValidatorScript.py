@@ -12,6 +12,8 @@ file_db_mapping = {
         "schema": "validation",
         "table": "abc_table",
         "audit_columns": ["created_at", "updated_at"],  # Columns to exclude from DB data
+        "uid": "your_username",  # Add database username
+        "pwd": "your_password",  # Add database password
     },
     "xyz_*.csv": {
         "server": "another_server_name",
@@ -19,6 +21,8 @@ file_db_mapping = {
         "schema": "another_schema",
         "table": "xyz_table",
         "audit_columns": ["audit_id"],  # Example audit column
+        "uid": "another_username",  # Add another database username
+        "pwd": "another_password",  # Add another database password
     },
 }
 
@@ -26,9 +30,15 @@ file_db_mapping = {
 logging.basicConfig(filename="validation_log.log", level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def connect_to_db(server, database):
-    """Establish a database connection."""
-    connection_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes;"
+def connect_to_db(server, database, uid, pwd):
+    """Establish a database connection with credentials."""
+    connection_str = (
+        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+        f"SERVER={server};"
+        f"DATABASE={database};"
+        f"UID={uid};"
+        f"PWD={pwd};"
+    )
     return pyodbc.connect(connection_str)
 
 
@@ -48,7 +58,12 @@ def read_file_data(file_path):
 def read_db_data(db_details):
     """Fetch data from the database while excluding audit columns."""
     try:
-        conn = connect_to_db(db_details["server"], db_details["database"])
+        conn = connect_to_db(
+            db_details["server"],
+            db_details["database"],
+            db_details["uid"],
+            db_details["pwd"],
+        )
         query = f"SELECT * FROM {db_details['schema']}.{db_details['table']}"
         db_data = pd.read_sql(query, conn)
         audit_columns = db_details.get("audit_columns", [])
