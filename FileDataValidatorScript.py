@@ -1,23 +1,23 @@
 import os
 import pandas as pd
 import pyodbc
-import re
+import fnmatch
 import logging
 
 # Configuration: File naming patterns and database details
 file_db_mapping = {
-    r"abc_\w+_\w+\.csv": {
+    "abc_*.csv": {
         "server": "your_server_name",
         "database": "your_database_name",
         "schema": "validation",
-        "table": "abc",
+        "table": "abc_table",
         "audit_columns": ["created_at", "updated_at"],  # Columns to exclude from DB data
     },
-    r"xyz_\d+\.csv": {
+    "xyz_*.csv": {
         "server": "another_server_name",
         "database": "another_database_name",
         "schema": "another_schema",
-        "table": "xyz",
+        "table": "xyz_table",
         "audit_columns": ["audit_id"],  # Example audit column
     },
 }
@@ -32,6 +32,19 @@ def connect_to_db(server, database):
     return pyodbc.connect(connection_str)
 
 
+def read_file_data(file_path):
+    """Read data from a CSV file."""
+    try:
+        # Try reading the file with a guessed delimiter
+        file_data = pd.read_csv(file_path, skiprows=1)  # Skip header
+        if file_data.empty:
+            logging.warning(f"File {file_path} is empty.")
+        return file_data
+    except Exception as e:
+        logging.error(f"Error reading file {file_path}: {e}")
+        return pd.DataFrame()
+
+
 def read_db_data(db_details):
     """Fetch data from the database while excluding audit columns."""
     try:
@@ -40,6 +53,8 @@ def read_db_data(db_details):
         db_data = pd.read_sql(query, conn)
         audit_columns = db_details.get("audit_columns", [])
         db_data = db_data.drop(columns=audit_columns, errors="ignore")  # Remove audit columns
+        if db_data.empty:
+            logging.warning(f"No data fetched from DB table {db_details['schema']}.{db_details['table']}")
         return db_data
     except Exception as e:
         logging.error(f"Error fetching data from {db_details['schema']}.{db_details['table']}: {e}")
@@ -49,12 +64,19 @@ def read_db_data(db_details):
 def validate_data(file_path, db_data):
     """Validate data between the file and database record-by-record."""
     try:
-        # Read the file into a DataFrame, skipping the header
-        file_data = pd.read_csv(file_path, skiprows=1)  # Skip header
-        file_data.columns = [col.strip() for col in file_data.columns]  # Clean column names
+        # Read file data
+        file_data = read_file_data(file_path)
 
-        # Ensure the dataframes have the same columns
+        # Check if both file and DB data are non-empty
+        if file_data.empty or db_data.empty:
+            return "FAILED"
+
+        # Align columns and sort for comparison
         common_columns = file_data.columns.intersection(db_data.columns)
+        if common_columns.empty:
+            logging.warning(f"No common columns between file {file_path} and DB data.")
+            return "FAILED"
+
         file_data = file_data[common_columns].sort_values(by=common_columns[0]).reset_index(drop=True)
         db_data = db_data[common_columns].sort_values(by=common_columns[0]).reset_index(drop=True)
 
@@ -72,14 +94,11 @@ def process_files(base_directory):
         for filename in filenames:
             file_path = os.path.join(dirpath, filename)
             for pattern, db_details in file_db_mapping.items():
-                if re.match(pattern, filename):
+                if fnmatch.fnmatch(filename, pattern):  # Match pattern using fnmatch
                     logging.info(f"Processing file {file_path} with pattern {pattern}")
                     
                     # Read data from the database
                     db_data = read_db_data(db_details)
-                    if db_data.empty:
-                        logging.warning(f"No data fetched from DB for file {file_path}")
-                        continue
                     
                     # Validate data
                     validation_status = validate_data(file_path, db_data)
@@ -93,7 +112,7 @@ def process_files(base_directory):
 
 
 # Specify the base directory
-base_directory = "path/to/your/base/directory"
+base_directory = "G:/programdata/Test"
 
 # Process the files
 process_files(base_directory)
