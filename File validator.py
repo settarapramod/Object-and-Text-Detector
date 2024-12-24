@@ -22,10 +22,29 @@ def setup_logger(log_dir, log_filename_prefix):
     )
     return log_path
 
+def setup_failed_logger(log_dir, log_filename_prefix):
+    # Ensure the log directory exists
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Generate a log filename with a timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"{log_filename_prefix}_{timestamp}.log"
+    log_path = os.path.join(log_dir, log_filename)
+
+    # Configure a separate logger for failed files
+    failed_logger = logging.getLogger("failed_logger")
+    failed_logger.setLevel(logging.INFO)
+    failed_handler = logging.FileHandler(log_path)
+    failed_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
+    failed_logger.addHandler(failed_handler)
+
+    return failed_logger, log_path
+
 def validate_files(file_list_path, log_dir, display_console=True):
-    # Set up the logger
-    validation_log_path = setup_logger(log_dir, "validation_log")
-    failed_log_path = setup_logger(log_dir, "failed_log")
+    # Set up the validation logger
+    setup_logger(log_dir, "validation_log")
+    # Set up the failed files logger
+    failed_logger, failed_log_path = setup_failed_logger(log_dir, "failed_log")
 
     logging.info("File Validation Start")
     logging.info("=" * 100)
@@ -67,14 +86,14 @@ def validate_files(file_list_path, log_dir, display_console=True):
     logging.info("=" * 100)
     logging.info("File Validation End")
 
-    # Log and display failed files
+    # Log failed files
     if failed_files:
-        logging.info("Failed File Validation Start")
-        logging.info("=" * 100)
+        failed_logger.info("Failed File Validation Start")
+        failed_logger.info("=" * 100)
         for failed_file in failed_files:
-            logging.info(f"FAILED: {failed_file}")
-        logging.info("=" * 100)
-        logging.info("Failed File Validation End")
+            failed_logger.info(f"FAILED: {failed_file}")
+        failed_logger.info("=" * 100)
+        failed_logger.info("Failed File Validation End")
         if display_console:
             print(f"\nFailed files log saved to {failed_log_path}")
     else:
