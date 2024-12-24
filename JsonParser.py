@@ -7,7 +7,7 @@ def extract_datasets(json_obj, parent_key="root", datasets=None):
         datasets = {}
 
     # Current level data
-    current_data = {}
+    current_data = []
     for key, value in json_obj.items():
         if isinstance(value, dict):  # Embedded JSON
             new_key = f"{parent_key}_{key}"
@@ -15,18 +15,18 @@ def extract_datasets(json_obj, parent_key="root", datasets=None):
         elif isinstance(value, list):  # List of JSON objects
             for idx, item in enumerate(value):
                 if isinstance(item, dict):
-                    new_key = f"{parent_key}_{key}_{idx}"
+                    new_key = f"{parent_key}_{key}"
                     extract_datasets(item, new_key, datasets)
                 else:
-                    current_data[f"{key}_{idx}"] = item
+                    current_data.append({f"{key}_{idx}": item})
         else:  # Simple key-value
-            current_data[key] = value
+            current_data.append({key: value})
 
     # Add current level data to datasets
     if current_data:
         if parent_key not in datasets:
             datasets[parent_key] = []
-        datasets[parent_key].append(current_data)
+        datasets[parent_key].extend(current_data)
 
     return datasets
 
@@ -40,10 +40,22 @@ def convert_to_dataframes(datasets):
 # Read JSON file and process
 def process_json_file(file_path):
     with open(file_path, 'r') as file:
-        json_obj = json.load(file)
+        json_data = json.load(file)
     
-    # Extract datasets
-    datasets = extract_datasets(json_obj)
+    # If it's a list of JSON objects, process each object
+    if isinstance(json_data, list):
+        combined_datasets = {}
+        for item in json_data:
+            datasets = extract_datasets(item)
+            for key, rows in datasets.items():
+                if key not in combined_datasets:
+                    combined_datasets[key] = []
+                combined_datasets[key].extend(rows)
+        datasets = combined_datasets
+    else:
+        # Single JSON object
+        datasets = extract_datasets(json_data)
+    
     # Convert to Pandas DataFrames
     dataframes = convert_to_dataframes(datasets)
     
