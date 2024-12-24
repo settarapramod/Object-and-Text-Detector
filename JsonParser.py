@@ -1,5 +1,7 @@
 import pandas as pd
+import json
 
+# Function to extract datasets
 def extract_datasets(json_obj, parent_key="root", datasets=None):
     if datasets is None:
         datasets = {}
@@ -28,40 +30,29 @@ def extract_datasets(json_obj, parent_key="root", datasets=None):
 
     return datasets
 
-# Convert datasets to Pandas DataFrames
+# Function to convert datasets to Pandas DataFrames
 def convert_to_dataframes(datasets):
     dataframes = {}
     for key, rows in datasets.items():
         dataframes[key] = pd.DataFrame(rows)
     return dataframes
 
+# Read JSON file and process
+def process_json_file(file_path):
+    with open(file_path, 'r') as file:
+        json_obj = json.load(file)
+    
+    # Extract datasets
+    datasets = extract_datasets(json_obj)
+    # Convert to Pandas DataFrames
+    dataframes = convert_to_dataframes(datasets)
+    
+    # Print all datasets
+    for key, df in dataframes.items():
+        print(f"Dataset: {key}")
+        print(df)
+        print("\n")
+
 # Example usage
-import json
-
-json_data = """
-{
-    "id": 1,
-    "name": "Sample",
-    "details": {
-        "age": 25,
-        "address": {
-            "city": "New York",
-            "zipcode": "10001"
-        }
-    },
-    "tags": ["json", "pandas"],
-    "metadata": [
-        {"key": "color", "value": "blue"},
-        {"key": "size", "value": "medium"}
-    ]
-}
-"""
-
-json_obj = json.loads(json_data)
-datasets = extract_datasets(json_obj)
-dataframes = convert_to_dataframes(datasets)
-
-# Print datasets
-for key, df in dataframes.items():
-    print(f"Dataset: {key}")
-    print(df)
+file_path = "your_json_file.json"  # Replace with your JSON file path
+process_json_file(file_path)
