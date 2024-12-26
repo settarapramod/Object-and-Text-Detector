@@ -34,12 +34,21 @@ def connect_to_db(server, database):
     return pyodbc.connect(connection_str)
 
 
+def normalize_data(dataframe):
+    """Normalize data by replacing None and NaN with pd.NA."""
+    return dataframe.fillna(pd.NA)
+
+
 def validate_data(file_data, db_data, file_path, db_details):
     """Validate file data against database data."""
     try:
         # Drop specified columns from file and database data
         file_data = file_data.drop(columns=db_details.get("skip_file_columns", []), errors="ignore")
         db_data = db_data.drop(columns=db_details.get("skip_db_columns", []), errors="ignore")
+
+        # Normalize data
+        file_data = normalize_data(file_data)
+        db_data = normalize_data(db_data)
 
         # Check if columns match
         if set(file_data.columns) != set(db_data.columns):
