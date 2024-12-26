@@ -34,9 +34,18 @@ def connect_to_db(server, database):
     return pyodbc.connect(connection_str)
 
 
+def convert_booleans(dataframe):
+    """Convert boolean values in the DataFrame to integers (0 or 1)."""
+    for column in dataframe.columns:
+        if dataframe[column].dtype == "bool":
+            dataframe[column] = dataframe[column].astype(int)
+    return dataframe
+
+
 def normalize_data(dataframe):
-    """Normalize data by replacing None and NaN with pd.NA."""
-    return dataframe.fillna(pd.NA)
+    """Normalize data by replacing None and NaN with pd.NA and casting everything to string."""
+    dataframe = dataframe.fillna(pd.NA).astype(str)
+    return dataframe
 
 
 def validate_data(file_data, db_data, file_path, db_details):
@@ -45,6 +54,9 @@ def validate_data(file_data, db_data, file_path, db_details):
         # Drop specified columns from file and database data
         file_data = file_data.drop(columns=db_details.get("skip_file_columns", []), errors="ignore")
         db_data = db_data.drop(columns=db_details.get("skip_db_columns", []), errors="ignore")
+
+        # Convert boolean values in database data to 0/1
+        db_data = convert_booleans(db_data)
 
         # Normalize data
         file_data = normalize_data(file_data)
@@ -73,13 +85,15 @@ def validate_file(file_path, db_details):
     """Validate a single file."""
     try:
         # Read file data into a DataFrame
-        file_data = pd.read_csv(file_path)
+        file_data = pd.read_csv(file_path, dtype=str)  # Read file data as strings
         logging.info(f"Read {file_path} with {len(file_data)} rows.")
 
         # Connect to the database
         conn = connect_to_db(db_details["server"], db_details["database"])
         query = f"SELECT * FROM {db_details['schema']}.{db_details['table']}"
         db_data = pd.read_sql(query, conn)
+        db_data = convert_booleans(db_data)  # Convert boolean columns to 0/1
+        db_data = db_data.astype(str)  # Ensure all database data is treated as strings
 
         # Perform validation
         validation_status = validate_data(file_data, db_data, file_path, db_details)
