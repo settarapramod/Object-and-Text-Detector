@@ -5,25 +5,56 @@ import re
 import logging
 
 
-def setup_logging(log_file="validation_log.log"):
-    """Set up logging configuration."""
+def setup_logging():
+    """Set up the logging configuration."""
     logging.basicConfig(
-        filename=log_file,
+        filename="validation_log.log",
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(levelname)s - %(message)s",
     )
+    logging.info("Logging setup complete.")
 
 
 def connect_to_db(server, database):
     """Establish a database connection."""
-    logging.info(f"Connecting to database '{database}' on server '{server}'...")
-    connection_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes;"
-    return pyodbc.connect(connection_str)
+    try:
+        logging.info(f"Connecting to database: {database} on server: {server}")
+        connection_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes;"
+        conn = pyodbc.connect(connection_str)
+        logging.info("Database connection successful.")
+        return conn
+    except Exception as e:
+        logging.error(f"Failed to connect to database: {e}")
+        raise
+
+
+def read_file(file_path):
+    """Read data from a CSV file."""
+    try:
+        logging.info(f"Reading file: {file_path}")
+        data = pd.read_csv(file_path, dtype=str)  # Read file data as strings
+        logging.info(f"Successfully read file: {file_path} with {len(data)} rows.")
+        return data
+    except Exception as e:
+        logging.error(f"Error reading file {file_path}: {e}")
+        raise
+
+
+def fetch_db_data(conn, schema, table):
+    """Fetch data from the database."""
+    try:
+        query = f"SELECT * FROM {schema}.{table}"
+        logging.info(f"Executing query: {query}")
+        data = pd.read_sql(query, conn)
+        logging.info(f"Fetched {len(data)} rows from database table: {schema}.{table}")
+        return data
+    except Exception as e:
+        logging.error(f"Error fetching data from database table {schema}.{table}: {e}")
+        raise
 
 
 def convert_booleans(dataframe):
     """Convert boolean values in the DataFrame to integers (0 or 1)."""
-    logging.info("Converting boolean values to 0/1...")
     for column in dataframe.columns:
         if dataframe[column].dtype == "bool":
             dataframe[column] = dataframe[column].astype(int)
@@ -32,7 +63,6 @@ def convert_booleans(dataframe):
 
 def normalize_data(dataframe):
     """Normalize data by replacing None and NaN with pd.NA and casting everything to string."""
-    logging.info("Normalizing data by converting all values to strings...")
     dataframe = dataframe.fillna(pd.NA).astype(str)
     return dataframe
 
@@ -55,13 +85,11 @@ def log_mismatches(file_data, db_data, file_path):
 def validate_data(file_data, db_data, file_path, db_details):
     """Validate file data against database data."""
     try:
-        logging.info(f"Validating data for file: {file_path}...")
-        
-        # Drop specified columns
+        # Drop specified columns from file and database data
         file_data = file_data.drop(columns=db_details.get("skip_file_columns", []), errors="ignore")
         db_data = db_data.drop(columns=db_details.get("skip_db_columns", []), errors="ignore")
 
-        # Convert boolean values
+        # Convert boolean values in database data to 0/1
         db_data = convert_booleans(db_data)
 
         # Normalize data
@@ -70,53 +98,81 @@ def validate_data(file_data, db_data, file_path, db_details):
 
         # Check if columns match
         if set(file_data.columns) != set(db_data.columns):
-            logging.error(
-                f"Column mismatch for file {file_path}. File columns: {file_data.columns}, DB columns: {db_data.columns}"
-            )
+            logging.error(f"Column mismatch for file {file_path}. File columns: {file_data.columns}, DB columns: {db_data.columns}")
             return "FAILED"
 
         # Normalize order of columns
         file_data = file_data.sort_index(axis=1)
         db_data = db_data.sort_index(axis=1)
 
-        # Log mismatches
+        # Log mismatches and return validation result
         return log_mismatches(file_data, db_data, file_path)
     except Exception as e:
         logging.error(f"Error validating data for {file_path}: {e}")
         return "FAILED"
 
 
-def validate_file(file_path, db_details):
-    """Validate a single file."""
+def process_file(file_path, db_details):
+    """Process and validate a single file."""
     try:
-        logging.info(f"Starting validation for file: {file_path}...")
-        
-        # Read file data
-        file_data = pd.read_csv(file_path, dtype=str)
-        logging.info(f"Loaded file {file_path} with {len(file_data)} rows.")
-
-        # Connect to the database
+        file_data = read_file(file_path)
         conn = connect_to_db(db_details["server"], db_details["database"])
-        query = f"SELECT * FROM {db_details['schema']}.{db_details['table']}"
-        db_data = pd.read_sql(query, conn)
-        db_data = convert_booleans(db_data)
-        db_data = db_data.astype(str)
-        conn.close()
-        logging.info(f"Loaded database data with {len(db_data)} rows.")
-
-        # Perform validation
+        db_data = fetch_db_data(conn, db_details["schema"], db_details["table"])
         validation_status = validate_data(file_data, db_data, file_path, db_details)
-
-        # Log results
         logging.info(
-            f"Validation result for file: {file_path} - Database: {db_details['database']}, "
-            f"Schema: {db_details['schema']}, Table: {db_details['table']}, Status: {validation_status}"
+            f"File: {file_path}, DB: {db_details['database']}, Schema: {db_details['schema']}, "
+            f"Table: {db_details['table']}, Status: {validation_status}"
         )
     except Exception as e:
         logging.error(f"Error processing file {file_path}: {e}")
 
 
-def process_files(config_mapping, base_directory):
-    """Process all files based on configuration and validate them."""
-    logging.info(f"Starting to process files in directory: {base_directory}...")
-    for dirpath, dirnames, filenames in
+def process_directory(base_directory, config_mapping):
+    """Process all files in the base directory and validate them."""
+    for dirpath, dirnames, filenames in os.walk(base_directory):
+        for filename in filenames:
+            file_path = os.path.join(dirpath, filename)
+            for pattern, db_details in config_mapping.items():
+                if re.match(pattern, filename):
+                    logging.info(f"Processing file {file_path} with pattern {pattern}")
+                    process_file(file_path, db_details)
+                    break
+
+
+def main(config_mapping, base_directory):
+    """Main function to process files using the provided configuration."""
+    setup_logging()
+    try:
+        logging.info("Starting file validation process.")
+        process_directory(base_directory, config_mapping)
+        logging.info("File validation process completed.")
+    except Exception as e:
+        logging.error(f"Critical error in main process: {e}")
+
+
+if __name__ == "__main__":
+    # Define the configuration mapping
+    config_mapping = {
+        r"abc_\w+_\w+\.csv": {
+            "server": "your_server_name",
+            "database": "your_database_name",
+            "schema": "validation",
+            "table": "abc",
+            "skip_db_columns": ["created_at", "updated_at"],  # Columns to skip from the database
+            "skip_file_columns": ["extra_col"],  # Columns to skip from the file
+        },
+        r"xyz_\d+\.csv": {
+            "server": "another_server_name",
+            "database": "another_database_name",
+            "schema": "another_schema",
+            "table": "xyz",
+            "skip_db_columns": ["audit_col"],
+            "skip_file_columns": ["ignore_col"],
+        },
+    }
+
+    # Define the base directory containing the files
+    base_directory = "path/to/your/base/directory"
+
+    # Run the main function
+    main(config_mapping, base_directory)
