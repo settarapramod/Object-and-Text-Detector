@@ -43,19 +43,36 @@ def validate_data(dataset, table_data, exclude_columns):
     """
     Validate dataset vs. table data.
     """
+    # Exclude specified columns
     if exclude_columns:
         dataset = dataset.drop(columns=exclude_columns, errors='ignore')
         table_data = table_data.drop(columns=exclude_columns, errors='ignore')
 
-    if dataset.shape != table_data.shape:
-        logger.warning("Mismatch in shape between dataset and table data.")
+    # Check column names
+    dataset_columns = set(dataset.columns)
+    table_columns = set(table_data.columns)
+
+    if dataset_columns != table_columns:
+        missing_in_table = dataset_columns - table_columns
+        extra_in_table = table_columns - dataset_columns
+        logger.error(f"Column mismatch: Missing in table - {missing_in_table}, Extra in table - {extra_in_table}")
+        return False
+
+    # Check record count
+    if len(dataset) != len(table_data):
+        logger.error(f"Record count mismatch: Dataset has {len(dataset)} records, Table has {len(table_data)} records.")
         return False
 
     # Value-by-value comparison
-    for _, row in dataset.iterrows():
-        if not any((table_data == row.to_dict()).all(axis=1)):
-            logger.error(f"Row mismatch found: {row.to_dict()}")
-            return False
+    mismatched_rows = []
+    for i, row in dataset.iterrows():
+        row_dict = row.to_dict()
+        if not any((table_data == row_dict).all(axis=1)):
+            mismatched_rows.append(row_dict)
+
+    if mismatched_rows:
+        logger.error(f"Value mismatches found: {len(mismatched_rows)} rows do not match. Details: {mismatched_rows}")
+        return False
 
     logger.info("Validation successful: Dataset matches table data.")
     return True
