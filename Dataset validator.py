@@ -2,8 +2,16 @@ import pandas as pd
 import pyodbc
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging to file and console
+log_file = 'validation.log'
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger()
 
 # Example datasets as a dictionary (key: dataset name, value: pandas DataFrame)
