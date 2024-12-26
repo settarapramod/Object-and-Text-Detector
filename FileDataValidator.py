@@ -4,38 +4,26 @@ import pyodbc
 import re
 import logging
 
-# Configuration: File naming patterns and database details
-file_db_mapping = {
-    r"abc_\w+_\w+\.csv": {
-        "server": "your_server_name",
-        "database": "your_database_name",
-        "schema": "validation",
-        "table": "abc",
-        "skip_db_columns": ["created_at", "updated_at"],  # Columns to skip from the database
-        "skip_file_columns": ["extra_col"],  # Columns to skip from the file
-    },
-    r"xyz_\d+\.csv": {
-        "server": "another_server_name",
-        "database": "another_database_name",
-        "schema": "another_schema",
-        "table": "xyz",
-        "skip_db_columns": ["audit_col"],
-        "skip_file_columns": ["ignore_col"],
-    },
-}
 
-# Set up logging
-logging.basicConfig(filename="validation_log.log", level=logging.INFO, format="%(asctime)s - %(message)s")
+def setup_logging(log_file="validation_log.log"):
+    """Set up logging configuration."""
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
 
 def connect_to_db(server, database):
     """Establish a database connection."""
+    logging.info(f"Connecting to database '{database}' on server '{server}'...")
     connection_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes;"
     return pyodbc.connect(connection_str)
 
 
 def convert_booleans(dataframe):
     """Convert boolean values in the DataFrame to integers (0 or 1)."""
+    logging.info("Converting boolean values to 0/1...")
     for column in dataframe.columns:
         if dataframe[column].dtype == "bool":
             dataframe[column] = dataframe[column].astype(int)
@@ -44,6 +32,7 @@ def convert_booleans(dataframe):
 
 def normalize_data(dataframe):
     """Normalize data by replacing None and NaN with pd.NA and casting everything to string."""
+    logging.info("Normalizing data by converting all values to strings...")
     dataframe = dataframe.fillna(pd.NA).astype(str)
     return dataframe
 
@@ -66,11 +55,13 @@ def log_mismatches(file_data, db_data, file_path):
 def validate_data(file_data, db_data, file_path, db_details):
     """Validate file data against database data."""
     try:
-        # Drop specified columns from file and database data
+        logging.info(f"Validating data for file: {file_path}...")
+        
+        # Drop specified columns
         file_data = file_data.drop(columns=db_details.get("skip_file_columns", []), errors="ignore")
         db_data = db_data.drop(columns=db_details.get("skip_db_columns", []), errors="ignore")
 
-        # Convert boolean values in database data to 0/1
+        # Convert boolean values
         db_data = convert_booleans(db_data)
 
         # Normalize data
@@ -79,14 +70,16 @@ def validate_data(file_data, db_data, file_path, db_details):
 
         # Check if columns match
         if set(file_data.columns) != set(db_data.columns):
-            logging.error(f"Column mismatch for file {file_path}. File columns: {file_data.columns}, DB columns: {db_data.columns}")
+            logging.error(
+                f"Column mismatch for file {file_path}. File columns: {file_data.columns}, DB columns: {db_data.columns}"
+            )
             return "FAILED"
 
         # Normalize order of columns
         file_data = file_data.sort_index(axis=1)
         db_data = db_data.sort_index(axis=1)
 
-        # Log mismatches and return validation result
+        # Log mismatches
         return log_mismatches(file_data, db_data, file_path)
     except Exception as e:
         logging.error(f"Error validating data for {file_path}: {e}")
@@ -96,43 +89,34 @@ def validate_data(file_data, db_data, file_path, db_details):
 def validate_file(file_path, db_details):
     """Validate a single file."""
     try:
-        # Read file data into a DataFrame
-        file_data = pd.read_csv(file_path, dtype=str)  # Read file data as strings
-        logging.info(f"Read {file_path} with {len(file_data)} rows.")
+        logging.info(f"Starting validation for file: {file_path}...")
+        
+        # Read file data
+        file_data = pd.read_csv(file_path, dtype=str)
+        logging.info(f"Loaded file {file_path} with {len(file_data)} rows.")
 
         # Connect to the database
         conn = connect_to_db(db_details["server"], db_details["database"])
         query = f"SELECT * FROM {db_details['schema']}.{db_details['table']}"
         db_data = pd.read_sql(query, conn)
-        db_data = convert_booleans(db_data)  # Convert boolean columns to 0/1
-        db_data = db_data.astype(str)  # Ensure all database data is treated as strings
+        db_data = convert_booleans(db_data)
+        db_data = db_data.astype(str)
+        conn.close()
+        logging.info(f"Loaded database data with {len(db_data)} rows.")
 
         # Perform validation
         validation_status = validate_data(file_data, db_data, file_path, db_details)
 
         # Log results
         logging.info(
-            f"File: {file_path}, DB: {db_details['database']}, Schema: {db_details['schema']}, "
-            f"Table: {db_details['table']}, Status: {validation_status}"
+            f"Validation result for file: {file_path} - Database: {db_details['database']}, "
+            f"Schema: {db_details['schema']}, Table: {db_details['table']}, Status: {validation_status}"
         )
     except Exception as e:
         logging.error(f"Error processing file {file_path}: {e}")
 
 
-def process_files(base_directory):
-    """Process all files in the base directory and validate them."""
-    for dirpath, dirnames, filenames in os.walk(base_directory):
-        for filename in filenames:
-            file_path = os.path.join(dirpath, filename)
-            for pattern, db_details in file_db_mapping.items():
-                if re.match(pattern, filename):
-                    logging.info(f"Processing file {file_path} with pattern {pattern}")
-                    validate_file(file_path, db_details)
-                    break
-
-
-# Specify the base directory
-base_directory = "path/to/your/base/directory"
-
-# Process the files
-process_files(base_directory)
+def process_files(config_mapping, base_directory):
+    """Process all files based on configuration and validate them."""
+    logging.info(f"Starting to process files in directory: {base_directory}...")
+    for dirpath, dirnames, filenames in
