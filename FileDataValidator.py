@@ -48,6 +48,21 @@ def normalize_data(dataframe):
     return dataframe
 
 
+def log_mismatches(file_data, db_data, file_path):
+    """Log specific column mismatches with values from both file and database."""
+    mismatches = []
+    for column in file_data.columns:
+        if not file_data[column].equals(db_data[column]):
+            for idx, (file_value, db_value) in enumerate(zip(file_data[column], db_data[column])):
+                if file_value != db_value:
+                    mismatches.append(
+                        f"Mismatch in column '{column}' at row {idx + 1}: File Value='{file_value}', DB Value='{db_value}'"
+                    )
+    if mismatches:
+        logging.error(f"Mismatches found for file {file_path}:\n" + "\n".join(mismatches))
+    return "FAILED" if mismatches else "PASSED"
+
+
 def validate_data(file_data, db_data, file_path, db_details):
     """Validate file data against database data."""
     try:
@@ -71,11 +86,8 @@ def validate_data(file_data, db_data, file_path, db_details):
         file_data = file_data.sort_index(axis=1)
         db_data = db_data.sort_index(axis=1)
 
-        # Compare data (ignoring index differences)
-        if file_data.equals(db_data):
-            return "PASSED"
-        else:
-            return "FAILED"
+        # Log mismatches and return validation result
+        return log_mismatches(file_data, db_data, file_path)
     except Exception as e:
         logging.error(f"Error validating data for {file_path}: {e}")
         return "FAILED"
