@@ -9,38 +9,28 @@ def setup_logger(log_dir, log_filename_prefix):
     log_filename = f"{log_filename_prefix}_{timestamp}.log"
     log_path = os.path.join(log_dir, log_filename)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_path),
-            logging.StreamHandler()
-        ]
-    )
-    return log_path
+    logger = logging.getLogger(log_filename_prefix)
+    logger.setLevel(logging.INFO)
 
-def setup_failed_logger(log_dir, log_filename_prefix):
-    """Sets up a separate logger for failed validations."""
-    os.makedirs(log_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"{log_filename_prefix}_{timestamp}.log"
-    log_path = os.path.join(log_dir, log_filename)
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
 
-    failed_logger = logging.getLogger("failed_logger")
-    failed_logger.setLevel(logging.INFO)
-    failed_handler = logging.FileHandler(log_path)
-    failed_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-    failed_logger.addHandler(failed_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
 
-    return failed_logger, log_path
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger, log_path
 
 def validate_files_and_folders(file_list_path, log_dir, display_console=True):
-    """Validates whether files and folders exist and logs the results."""
-    setup_logger(log_dir, "validation_log")
-    failed_logger, failed_log_path = setup_failed_logger(log_dir, "failed_log")
+    """Validates whether files and folders exist and logs results separately."""
+    
+    validation_logger, validation_log_path = setup_logger(log_dir, "validation_log")
+    failed_logger, failed_log_path = setup_logger(log_dir, "failed_log")
 
-    logging.info("Validation Process Started")
-    logging.info("=" * 100)
+    validation_logger.info("Validation Process Started")
+    validation_logger.info("=" * 100)
 
     with open(file_list_path, 'r') as file:
         paths = [line.strip() for line in file]
@@ -63,7 +53,7 @@ def validate_files_and_folders(file_list_path, log_dir, display_console=True):
         entry_name = os.path.basename(path)
 
         log_entry = f"{entry_type:<10} | {entry_name:<30} | {path:<60} | {status:<10}"
-        logging.info(log_entry)
+        validation_logger.info(log_entry)
 
         if display_console:
             print(log_entry)
@@ -71,8 +61,8 @@ def validate_files_and_folders(file_list_path, log_dir, display_console=True):
     if display_console:
         print("=" * 100)
 
-    logging.info("=" * 100)
-    logging.info("Validation Process Completed")
+    validation_logger.info("=" * 100)
+    validation_logger.info("Validation Process Completed")
 
     # Log failed entries separately
     if failed_entries:
@@ -81,10 +71,11 @@ def validate_files_and_folders(file_list_path, log_dir, display_console=True):
         for entry in failed_entries:
             failed_logger.info(f"FAILED: {entry}")
         failed_logger.info("=" * 100)
+
         if display_console:
             print(f"\nFailed entries log saved to {failed_log_path}")
     else:
-        logging.info("All files and folders exist. No failed log generated.")
+        validation_logger.info("All files and folders exist. No failed log generated.")
         if display_console:
             print("\nAll files and folders exist. No failed log generated.")
 
