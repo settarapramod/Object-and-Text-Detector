@@ -5,20 +5,30 @@ from collections import defaultdict
 def process_json(json_data, structure, id_config):
     datasets = defaultdict(list)
 
-    def extract_data(obj, table_name, parent_data=None):
+    def extract_data(obj, table_name, parent_data=None, parent_hierarchy=None):
         """Extract data from JSON objects and populate datasets."""
         if isinstance(obj, dict):
             dataset = {}
-            # Add ID from immediate parent if configured
-            if parent_data and table_name in id_config:
+            # Initialize parent hierarchy for deeper traversal
+            if parent_hierarchy is None:
+                parent_hierarchy = []
+
+            # Add ID from parent hierarchy if configured
+            if parent_hierarchy and table_name in id_config:
                 id_column = id_config[table_name]["id_column"]
                 source_key = id_config[table_name]["source"]
-                dataset[id_column] = parent_data.get(source_key, None)
+                # Search in the parent hierarchy for the key
+                for parent in reversed(parent_hierarchy):
+                    if source_key in parent:
+                        dataset[id_column] = parent[source_key]
+                        break
+                else:
+                    dataset[id_column] = None  # Populate as None if not found
 
             for key, value in obj.items():
                 if isinstance(value, (dict, list)):
                     nested_table_name = f"{table_name}_{key}"
-                    extract_data(value, nested_table_name, obj)
+                    extract_data(value, nested_table_name, obj, parent_hierarchy + [obj])
                 elif key in structure.get(table_name, []):
                     dataset[key] = value
 
@@ -26,7 +36,7 @@ def process_json(json_data, structure, id_config):
                 datasets[table_name].append(dataset)
         elif isinstance(obj, list):
             for item in obj:
-                extract_data(item, table_name, parent_data)
+                extract_data(item, table_name, parent_data, parent_hierarchy)
 
     # Start processing from the root level
     extract_data(json_data, "root")
@@ -64,11 +74,11 @@ structure = {
     "root_Projects_on_hold_B": ["Name", "Stack", "Active"],
 }
 
-# ID configuration for child tables
+# ID configuration for child tables with search in the parent hierarchy
 id_config = {
     "root_current_address": {"id_column": "ParentID", "source": "id"},  # ID for child comes from "id" in the parent
     "root_Permanent_address": {"id_column": "ParentID", "source": "id"},
-    "root_Projects_A": {"id_column": "ParentID", "source": "id"},
+    "root_Projects_A": {"id_column": "ParentID", "source": "id"},  # If not found in immediate parent, search higher up
     "root_Projects_on_hold_A": {"id_column": "ParentID", "source": "id"},
     "root_Projects_on_hold_B": {"id_column": "ParentID", "source": "id"},
 }
