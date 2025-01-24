@@ -24,13 +24,16 @@ def create_datasets_from_json(json_data, structure, id_config):
         return None
 
     def process_node(node, parent_id, parent_key):
+        print(f"Processing node: {parent_key}, {parent_id}")  # Debug print
         for key, value in node.items():
             table_name = f"{parent_key}_{key}" if parent_key else key
+            print(f"Table Name: {table_name}")  # Debug print
 
             # If key is in the structure
             if table_name in structure:
                 columns = structure[table_name]
                 rows = []
+                print(f"Columns: {columns}")  # Debug print
 
                 if isinstance(value, list):
                     for item in value:
