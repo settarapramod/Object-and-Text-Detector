@@ -1,89 +1,120 @@
 import pandas as pd
 import json
-from collections import defaultdict
 
-def process_json(json_data, structure, id_config):
-    datasets = defaultdict(list)
+# Function to flatten nested JSON and create datasets
+def create_datasets_from_json(json_data, structure, id_config):
+    datasets = {}
 
-    def extract_data(obj, table_name, parent_data=None, parent_hierarchy=None):
-        """Extract data from JSON objects and populate datasets."""
-        if isinstance(obj, dict):
-            dataset = {}
-            # Initialize parent hierarchy for deeper traversal
-            if parent_hierarchy is None:
-                parent_hierarchy = []
+    def search_key_in_json(json_obj, key_to_find):
+        """
+        Search for the first occurrence of a key in the entire JSON object.
+        """
+        if isinstance(json_obj, dict):
+            for key, value in json_obj.items():
+                if key == key_to_find:
+                    return value
+                result = search_key_in_json(value, key_to_find)
+                if result is not None:
+                    return result
+        elif isinstance(json_obj, list):
+            for item in json_obj:
+                result = search_key_in_json(item, key_to_find)
+                if result is not None:
+                    return result
+        return None
 
-            # Add ID from parent hierarchy if configured
-            if parent_hierarchy and table_name in id_config:
-                id_column = id_config[table_name]["id_column"]
-                source_key = id_config[table_name]["source"]
-                # Search in the parent hierarchy for the key
-                for parent in reversed(parent_hierarchy):
-                    if source_key in parent:
-                        dataset[id_column] = parent[source_key]
-                        break
-                else:
-                    dataset[id_column] = None  # Populate as None if not found
+    def process_node(node, parent_id, parent_key):
+        for key, value in node.items():
+            table_name = f"{parent_key}_{key}" if parent_key else key
 
-            for key, value in obj.items():
-                if isinstance(value, (dict, list)):
-                    nested_table_name = f"{table_name}_{key}"
-                    extract_data(value, nested_table_name, obj, parent_hierarchy + [obj])
-                elif key in structure.get(table_name, []):
-                    dataset[key] = value
+            # If key is in the structure
+            if table_name in structure:
+                columns = structure[table_name]
+                rows = []
 
-            if dataset:
-                datasets[table_name].append(dataset)
-        elif isinstance(obj, list):
-            for item in obj:
-                extract_data(item, table_name, parent_data, parent_hierarchy)
+                if isinstance(value, list):
+                    for item in value:
+                        row = {}
+                        for col in columns:
+                            row[col] = item.get(col, None)
+                        # Add ID column if configured
+                        if table_name in id_config:
+                            id_info = id_config[table_name]
+                            id_column = id_info["id_column"]
+                            source_key = id_info["source"]
 
-    # Start processing from the root level
-    extract_data(json_data, "root")
+                            # Try to fetch the ID from the immediate parent
+                            if source_key in node:
+                                row[id_column] = node[source_key]
+                            # If not in immediate parent, search entire JSON
+                            else:
+                                row[id_column] = search_key_in_json(json_data, source_key)
 
-    # Convert collected data to pandas DataFrames
-    final_datasets = {}
-    for table, rows in datasets.items():
-        final_datasets[table] = pd.DataFrame(rows)
+                        rows.append(row)
 
-    return final_datasets
+                elif isinstance(value, dict):
+                    row = {}
+                    for col in columns:
+                        row[col] = value.get(col, None)
+                    # Add ID column if configured
+                    if table_name in id_config:
+                        id_info = id_config[table_name]
+                        id_column = id_info["id_column"]
+                        source_key = id_info["source"]
+
+                        # Try to fetch the ID from the immediate parent
+                        if source_key in node:
+                            row[id_column] = node[source_key]
+                        # If not in immediate parent, search entire JSON
+                        else:
+                            row[id_column] = search_key_in_json(json_data, source_key)
+
+                    rows.append(row)
+
+                # Add rows to the dataset
+                datasets[table_name] = pd.DataFrame(rows, columns=columns + [id_config[table_name]["id_column"]] if table_name in id_config else columns)
+
+            # Process nested dictionaries or lists
+            if isinstance(value, dict):
+                process_node(value, parent_id, table_name)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        process_node(item, parent_id, table_name)
+
+    process_node(json_data, None, None)
+    return datasets
 
 
-def main(json_file_path, structure, id_config):
-    # Read JSON from file
-    with open(json_file_path, 'r') as f:
-        json_data = json.load(f)
-
-    # Process the JSON
-    datasets = process_json(json_data, structure, id_config)
-
-    # Print the resulting datasets
-    for table, df in datasets.items():
-        print(f"Dataset: {table}")
-        print(df)
-        print("-" * 50)
-
-
-# Predefined structure dictionary
+# Predefined structure for datasets
 structure = {
     "root": ["id", "name", "No"],
-    "root_current_address": ["HNO", "Floor", "Street", "State"],
-    "root_Permanent_address": ["HNO", "Floor", "Street", "District", "State"],
-    "root_Projects_A": ["Name", "Stack", "Time", "Active"],
-    "root_Projects_on_hold_A": ["Name", "Stack", "Time", "Active"],
-    "root_Projects_on_hold_B": ["Name", "Stack", "Active"],
+    "root_current_address": ["ΗΝΟ", "Floor", "Street", "State"],
+    "root_Permanent_address": ["ΗΝΟ", "Floor", "Street", "District", "State"],
+    "root_Projects_A": ["Name", "Stack", "Active"],
+    "root_Projects_on_hold_A": ["Name", "Stack", "Time"],
+    "root_Projects_on_hold_B": ["Name", "Stack", "Active"]
 }
 
-# ID configuration for child tables with search in the parent hierarchy
+# ID configuration for each dataset
 id_config = {
-    "root_current_address": {"id_column": "ParentID", "source": "id"},  # ID for child comes from "id" in the parent
-    "root_Permanent_address": {"id_column": "ParentID", "source": "id"},
-    "root_Projects_A": {"id_column": "ParentID", "source": "id"},  # If not found in immediate parent, search higher up
-    "root_Projects_on_hold_A": {"id_column": "ParentID", "source": "id"},
-    "root_Projects_on_hold_B": {"id_column": "ParentID", "source": "id"},
+    "root": {"id_column": "ID", "source": "id"},
+    "root_current_address": {"id_column": "ParentID", "source": "id"},
+    "root_Permanent_address": {"id_column": "CustomID", "source": "Stack"},  # Example for global search
+    "root_Projects_A": {"id_column": "ParentID", "source": "id"},
+    "root_Projects_on_hold_A": {"id_column": "ProjectID", "source": "id"},
+    "root_Projects_on_hold_B": {"id_column": "TaskID", "source": "Name"}
 }
 
-# Run the main function
-if __name__ == "__main__":
-    json_file_path = "test.json"  # Replace this with the path to your JSON file
-    main(json_file_path, structure, id_config)
+# Read JSON from a file
+with open("test.json", "r") as file:
+    json_data = json.load(file)
+
+# Generate datasets
+datasets = create_datasets_from_json(json_data, structure, id_config)
+
+# Print the datasets
+for name, df in datasets.items():
+    print(f"Dataset: {name}")
+    print(df)
+    print("-" * 50)
