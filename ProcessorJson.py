@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 from collections import defaultdict
 
 def process_json(json_data, structure):
@@ -30,35 +31,21 @@ def process_json(json_data, structure):
 
     return final_datasets
 
-# Example JSON
-json_data = {
-    "id": 1,
-    "name": "SP",
-    "No": 123456,
-    "current_address": {
-        "HNO": 123,
-        "Floor": 4,
-        "Street": "xyz",
-        "State": "TG",
-    },
-    "Permanent_address": {
-        "HNO": 123,
-        "Floor": 4,
-        "Street": "xyz",
-        "District": "HYD",
-        "State": "TG",
-    },
-    "Projects": {
-        "A": [
-            {"Name": "abc", "Stack": "SSIS", "Time": 10},
-            {"Name": "abc", "Stack": "SSIS", "Active": "False"},
-        ]
-    },
-    "Projects_on_hold": {
-        "A": {"Name": "abc", "Stack": "SSIS", "Time": 10},
-        "B": {"Name": "abc", "Stack": "SSIS", "Active": "False"},
-    },
-}
+
+def main(json_file_path, structure):
+    # Read JSON from file
+    with open(json_file_path, 'r') as f:
+        json_data = json.load(f)
+
+    # Process the JSON
+    datasets = process_json(json_data, structure)
+
+    # Print the resulting datasets
+    for table, df in datasets.items():
+        print(f"Dataset: {table}")
+        print(df)
+        print("-" * 50)
+
 
 # Predefined structure dictionary
 structure = {
@@ -70,11 +57,7 @@ structure = {
     "root_Projects_on_hold_B": ["Name", "Stack", "Active"],
 }
 
-# Process the JSON
-datasets = process_json(json_data, structure)
-
-# Print the resulting datasets
-for table, df in datasets.items():
-    print(f"Dataset: {table}")
-    print(df)
-    print("-" * 50)
+# Run the main function
+if __name__ == "__main__":
+    json_file_path = "test.json"  # Replace this with the path to your JSON file
+    main(json_file_path, structure)
