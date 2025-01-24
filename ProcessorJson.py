@@ -2,24 +2,31 @@ import pandas as pd
 import json
 from collections import defaultdict
 
-def process_json(json_data, structure):
+def process_json(json_data, structure, id_config):
     datasets = defaultdict(list)
 
-    def extract_data(obj, table_name):
+    def extract_data(obj, table_name, parent_data=None):
         """Extract data from JSON objects and populate datasets."""
         if isinstance(obj, dict):
             dataset = {}
+            # Add ID from immediate parent if configured
+            if parent_data and table_name in id_config:
+                id_column = id_config[table_name]["id_column"]
+                source_key = id_config[table_name]["source"]
+                dataset[id_column] = parent_data.get(source_key, None)
+
             for key, value in obj.items():
                 if isinstance(value, (dict, list)):
                     nested_table_name = f"{table_name}_{key}"
-                    extract_data(value, nested_table_name)
+                    extract_data(value, nested_table_name, obj)
                 elif key in structure.get(table_name, []):
                     dataset[key] = value
+
             if dataset:
                 datasets[table_name].append(dataset)
         elif isinstance(obj, list):
             for item in obj:
-                extract_data(item, table_name)
+                extract_data(item, table_name, parent_data)
 
     # Start processing from the root level
     extract_data(json_data, "root")
@@ -32,13 +39,13 @@ def process_json(json_data, structure):
     return final_datasets
 
 
-def main(json_file_path, structure):
+def main(json_file_path, structure, id_config):
     # Read JSON from file
     with open(json_file_path, 'r') as f:
         json_data = json.load(f)
 
     # Process the JSON
-    datasets = process_json(json_data, structure)
+    datasets = process_json(json_data, structure, id_config)
 
     # Print the resulting datasets
     for table, df in datasets.items():
@@ -57,7 +64,16 @@ structure = {
     "root_Projects_on_hold_B": ["Name", "Stack", "Active"],
 }
 
+# ID configuration for child tables
+id_config = {
+    "root_current_address": {"id_column": "ParentID", "source": "id"},  # ID for child comes from "id" in the parent
+    "root_Permanent_address": {"id_column": "ParentID", "source": "id"},
+    "root_Projects_A": {"id_column": "ParentID", "source": "id"},
+    "root_Projects_on_hold_A": {"id_column": "ParentID", "source": "id"},
+    "root_Projects_on_hold_B": {"id_column": "ParentID", "source": "id"},
+}
+
 # Run the main function
 if __name__ == "__main__":
     json_file_path = "test.json"  # Replace this with the path to your JSON file
-    main(json_file_path, structure)
+    main(json_file_path, structure, id_config)
